@@ -1,0 +1,13 @@
+[package]
+name = "runpmd"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "runpmd"
+path = "runpmd.rs"
+
+[dependencies]
+rdpdk = {path = "../.."}
+
+
