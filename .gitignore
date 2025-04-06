@@ -1,4 +1,3 @@
-*.patch
 Cargo.lock
 target/
 .idea/

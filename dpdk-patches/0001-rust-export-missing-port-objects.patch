@@ -1,0 +1,73 @@
+From 4fdcefcf307cb5353937a4b955037ef691733441 Mon Sep 17 00:00:00 2001
+From: Gregory Etelson <getelson@nvidia.com>
+Date: Sat, 29 Mar 2025 10:33:10 +0300
+Subject: [PATCH 1/2] rust: export missing port objects
+
+- rust_get_port_eth_device(): export port `rte_eth_dev` object.
+
+- rust_get_port_fp_ops(): export port `rte_eth_fp_ops` object.
+
+Signed-off-by: Gregory Etelson <getelson@nvidia.com>
+---
+ lib/ethdev/rte_ethdev.c | 12 ++++++++++++
+ lib/ethdev/rte_ethdev.h |  8 ++++++++
+ lib/ethdev/version.map  |  3 +++
+ 3 files changed, 23 insertions(+)
+
+diff --git a/lib/ethdev/rte_ethdev.c b/lib/ethdev/rte_ethdev.c
+index 85798d0ebc..fdd3d883fc 100644
+--- a/lib/ethdev/rte_ethdev.c
++++ b/lib/ethdev/rte_ethdev.c
+@@ -7251,4 +7251,16 @@ int rte_eth_dev_map_aggr_tx_affinity(uint16_t port_id, uint16_t tx_queue_id,
+ 	return ret;
+ }
+ 
++struct rte_eth_dev *
++rust_get_port_eth_device(uint16_t port_id)
++{
++	return port_id < RTE_MAX_ETHPORTS ? &rte_eth_devices[port_id] : NULL;
++}
++
++struct rte_eth_fp_ops *
++rust_get_port_fp_ops(uint16_t port_id)
++{
++	return port_id < RTE_MAX_ETHPORTS ? &rte_eth_fp_ops[port_id] : NULL;
++}
++
+ RTE_LOG_REGISTER_DEFAULT(rte_eth_dev_logtype, INFO);
+diff --git a/lib/ethdev/rte_ethdev.h b/lib/ethdev/rte_ethdev.h
+index ea7f8c4a1a..0f9340b73b 100644
+--- a/lib/ethdev/rte_ethdev.h
++++ b/lib/ethdev/rte_ethdev.h
+@@ -7143,6 +7143,14 @@ rte_eth_tx_queue_count(uint16_t port_id, uint16_t queue_id)
+ 	return rc;
+ }
+ 
++__rte_experimental
++struct rte_eth_dev *
++rust_get_port_eth_device(uint16_t port_id);
++
++__rte_experimental
++struct rte_eth_fp_ops *
++rust_get_port_fp_ops(uint16_t port_id);
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/lib/ethdev/version.map b/lib/ethdev/version.map
+index 3aacba8614..e37ad9ece0 100644
+--- a/lib/ethdev/version.map
++++ b/lib/ethdev/version.map
+@@ -341,6 +341,9 @@ EXPERIMENTAL {
+ 	# added in 25.03
+ 	rte_eth_xstats_query_state;
+ 	rte_eth_xstats_set_counter;
++
++	rust_get_port_eth_device;
++	rust_get_port_fp_ops;
+ };
+ 
+ INTERNAL {
+-- 
+2.45.2
+
