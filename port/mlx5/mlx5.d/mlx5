@@ -1,0 +1,87 @@
+#! /bin/bash
+
+
+
+bindgen_clang_opt="-Wno-unused-command-line-argument \
+-I${DPDK_BUILD_ROOT}/drivers/libtmp_rte_net_mlx5.a.p \
+-I${DPDK_BUILD_ROOT}/drivers \
+-I${DPDK_SOURCE_ROOT}/drivers \
+-I${DPDK_BUILD_ROOT}/drivers/net/mlx5 \
+-I${DPDK_SOURCE_ROOT}/drivers/net/mlx5 \
+-I${DPDK_BUILD_ROOT}/drivers/net/mlx5/linux \
+-I${DPDK_SOURCE_ROOT}/drivers/net/mlx5/linux \
+-I${DPDK_BUILD_ROOT}/drivers/net/mlx5/hws \
+-I${DPDK_SOURCE_ROOT}/drivers/net/mlx5/hws \
+-I${DPDK_BUILD_ROOT}/ib/ethdev \
+-I${DPDK_SOURCE_ROOT}/lib/ethdev \
+-I${DPDK_BUILD_ROOT} \
+-I${DPDK_SOURCE_ROOT} \
+-I${DPDK_BUILD_ROOT}/onfig \
+-I${DPDK_SOURCE_ROOT}/config \
+-I${DPDK_BUILD_ROOT}/ib/eal/include \
+-I${DPDK_SOURCE_ROOT}/lib/eal/include \
+-I${DPDK_BUILD_ROOT}/ib/eal/linux/include \
+-I${DPDK_SOURCE_ROOT}/lib/eal/linux/include \
+-I${DPDK_BUILD_ROOT}/ib/eal/x86/include \
+-I${DPDK_SOURCE_ROOT}/lib/eal/x86/include \
+-I${DPDK_SOURCE_ROOT}/kernel/linux \
+-I${DPDK_BUILD_ROOT}/ib/eal/common \
+-I${DPDK_SOURCE_ROOT}/lib/eal/common \
+-I${DPDK_BUILD_ROOT}/ib/eal \
+-I${DPDK_SOURCE_ROOT}/lib/eal \
+-I${DPDK_BUILD_ROOT}/ib/kvargs \
+-I${DPDK_SOURCE_ROOT}/lib/kvargs \
+-I${DPDK_BUILD_ROOT}/ib/log \
+-I${DPDK_SOURCE_ROOT}/lib/log \
+-I${DPDK_BUILD_ROOT}/ib/metrics \
+-I${DPDK_SOURCE_ROOT}/lib/metrics \
+-I${DPDK_BUILD_ROOT}/ib/telemetry \
+-I${DPDK_SOURCE_ROOT}/lib/telemetry \
+-I${DPDK_BUILD_ROOT}/ib/net \
+-I${DPDK_SOURCE_ROOT}/lib/net \
+-I${DPDK_BUILD_ROOT}/ib/mbuf \
+-I${DPDK_SOURCE_ROOT}/lib/mbuf \
+-I${DPDK_BUILD_ROOT}/ib/mempool \
+-I${DPDK_SOURCE_ROOT}/lib/mempool \
+-I${DPDK_BUILD_ROOT}/ib/ring \
+-I${DPDK_SOURCE_ROOT}/lib/ring \
+-I${DPDK_BUILD_ROOT}/ib/meter \
+-I${DPDK_SOURCE_ROOT}/lib/meter \
+-I${DPDK_BUILD_ROOT}/drivers/bus/pci \
+-I${DPDK_SOURCE_ROOT}/drivers/bus/pci \
+-I${DPDK_SOURCE_ROOT}/drivers/bus/pci/linux \
+-I${DPDK_BUILD_ROOT}/ib/pci \
+-I${DPDK_SOURCE_ROOT}/lib/pci \
+-I${DPDK_BUILD_ROOT}/drivers/bus/vdev \
+-I${DPDK_SOURCE_ROOT}/drivers/bus/vdev \
+-I${DPDK_BUILD_ROOT}/ib/hash \
+-I${DPDK_SOURCE_ROOT}/lib/hash \
+-I${DPDK_BUILD_ROOT}/ib/rcu \
+-I${DPDK_SOURCE_ROOT}/lib/rcu \
+-I${DPDK_BUILD_ROOT}/drivers/common/mlx5 \
+-I${DPDK_SOURCE_ROOT}/drivers/common/mlx5 \
+-I${DPDK_BUILD_ROOT}/drivers/common/mlx5/linux \
+-I${DPDK_SOURCE_ROOT}/drivers/common/mlx5/linux \
+-I${DPDK_BUILD_ROOT}/drivers/bus/auxiliary \
+-I${DPDK_SOURCE_ROOT}/drivers/bus/auxiliary \
+-I/usr/include/x86_64-linux-gnu \
+-I/usr/include/libnl3 \
+-D_FILE_OFFSET_BITS=64 \
+-include rte_config.h \
+-D_GNU_SOURCE \
+-DRTE_ENABLE_ASSERT=1 \
+-DRTE_LIBRTE_MLX5_DEBUG \
+-D_NO_MLX5_RSS_PTYPE_DEBUG \
+-DALLOW_EXPERIMENTAL_API \
+-DALLOW_INTERNAL_API \
+-DPEDANTIC \
+"
+bindgen_opt="--wrap-unsafe-ops --no-layout-tests \
+  --no-derive-debug \
+  --blocklist-var  RTE_EAL_PMD_PATH  \
+  --allowlist-type mlx5_priv \
+"
+
+bindgen $bindgen_opt -o mlx5.rs ${DPDK_SOURCE_ROOT}/drivers/net/mlx5/mlx5.h -- $bindgen_clang_opt
+
+sed -i 's/repr(align/repr(packed/g' mlx5.rs
