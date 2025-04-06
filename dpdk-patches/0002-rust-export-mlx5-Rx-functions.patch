@@ -1,0 +1,32 @@
+From 2cf0b396857c8ab484ee73378ba46a9b16a8e35a Mon Sep 17 00:00:00 2001
+From: Gregory Etelson <getelson@nvidia.com>
+Date: Sun, 6 Apr 2025 13:41:07 +0300
+Subject: [PATCH 2/2] rust: export mlx5 Rx functions
+
+- mlx5_rx_burst
+- mlx5_rx_burst_vec
+- mlx5_check_vec_rx_support
+
+Signed-off-by: Gregory Etelson <getelson@nvidia.com>
+---
+ drivers/net/mlx5/version.map | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/net/mlx5/version.map b/drivers/net/mlx5/version.map
+index 560f7ef79b..632382cac7 100644
+--- a/drivers/net/mlx5/version.map
++++ b/drivers/net/mlx5/version.map
+@@ -1,4 +1,10 @@
+ DPDK_25 {
++	global:
++
++	mlx5_rx_burst;
++	mlx5_rx_burst_vec;
++	mlx5_check_vec_rx_support;
++
+ 	local: *;
+ };
+ 
+-- 
+2.45.2
+
