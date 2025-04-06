@@ -17,8 +17,8 @@ use rdpdk::dpdk_raw::rte_ethdev::{
     rte_eth_rx_mq_mode_RTE_ETH_MQ_RX_VMDQ_DCB_RSS,
     rte_eth_rxconf,
     rte_eth_txconf,
-    RTE_ETH_NAME_MAX_LEN,
-    RTE_ETH_RSS_IP
+    rust_get_port_eth_device,
+    RTE_ETH_NAME_MAX_LEN, RTE_ETH_RSS_IP
 };
 use rdpdk::dpdk_raw::rte_mbuf::{rte_mbuf, rte_pktmbuf_free_bulk};
 use rdpdk::dpdk_raw::rte_mbuf_core::RTE_MBUF_DEFAULT_BUF_SIZE;
@@ -28,6 +28,7 @@ use std::thread;
 use rdpdk::port::{alloc_mbuf_pool, DpdkPortConf, DpdkPortCtrl, DpdkPortData};
 use rdpdk::raw_port::RawDpdkPort;
 use std::sync::Arc;
+use mlx5::Mlx5Port;
 use rdpdk::cmdline::port::PortModule;
 
 fn read_input() -> Result<String, String> {
@@ -128,13 +129,19 @@ fn show_packet(mbuf: &rte_mbuf) {
     );
 }
 
-fn do_rx(ports:&mut Vec<RawDpdkPort>) {
-    for port in &mut *ports {
+fn do_rx(ports:&mut Vec<(RawDpdkPort, Option<Box<dyn DpdkPortData>>)>) {
+    for (port, data_ops) in &mut *ports {
 
         let mut rx_pool:[*mut rte_mbuf; 64] = [null_mut(); 64];
 
         loop {
-            match port.rx_burst(port.port_id, &mut rx_pool as *mut *mut _, 64u16) {
+
+            let rx_burst_res = match data_ops {
+                Some(data_ops) => data_ops.rx_burst(port.port_id, &mut rx_pool as *mut *mut _, 64u16),
+                None => port.rx_burst(port.port_id, &mut rx_pool as *mut *mut _, 64u16),
+            };
+
+            match rx_burst_res {
                 Err(err) => println!("{err}"),
                 Ok(rx_num) => {
                     if rx_num > 0 {
@@ -177,7 +184,25 @@ fn register_cmd_modules() -> CmdModule {
     modules
 }
 
-fn start_port(port_id: u16, port_config: Arc<PortConfig>, pool: *mut rte_mempool) -> Result<RawDpdkPort, String> {
+fn is_mlx5_port(port_id: u16) -> bool {
+
+    let businfo = unsafe {
+        let dev : &rdpdk::dpdk_raw::ethdev_driver::rte_eth_dev =
+            & *(rust_get_port_eth_device(port_id)
+                as *mut _ as *const _);
+        let device = & *dev.device;
+        let c_str = device.bus_info.cast::<c_char>();
+
+        let str = CStr::from_ptr(c_str);
+        str.to_string_lossy().into_owned()
+    };
+
+    println!("=== businfo: {}", &businfo);
+
+    businfo.contains("vendor_id=15b3")
+}
+
+fn start_port(port_id: u16, port_config: Arc<PortConfig>, pool: *mut rte_mempool) -> Result<(RawDpdkPort, Option<Box<dyn DpdkPortData>>), String> {
     let dev_conf: rte_eth_conf = unsafe { std::mem::zeroed() };
     let tx_conf: rte_eth_txconf = unsafe { std::mem::zeroed() };
     let rx_conf: rte_eth_rxconf = unsafe { std::mem::zeroed() };
@@ -215,7 +240,13 @@ fn start_port(port_id: u16, port_config: Arc<PortConfig>, pool: *mut rte_mempool
     let _ = port.config_rxq(0, pool as _, socket_id);
     let _ = port.start();
 
-    Ok(port)
+    let data_ops: Option<Box<dyn DpdkPortData>> = if is_mlx5_port(port_id) {
+        Some(Mlx5Port::from(port.port_id))
+    } else {
+        None
+    };
+
+    Ok((port, data_ops))
 }
 
 struct PortConfig {
@@ -253,7 +284,7 @@ fn main() {
         0,
     ).unwrap() as *mut rte_mempool;
 
-    let mut ports: Vec<RawDpdkPort> = Vec::new();
+    let mut ports: Vec<(RawDpdkPort, Option<Box<dyn DpdkPortData>>)> = Vec::new();
     for port_id in 0..port_num {
         match start_port(port_id, port_config.clone(), mbuf_pool) {
             Ok(p) => ports.push(p),
@@ -277,12 +308,12 @@ fn main() {
     cli_thread.join().unwrap();
 }
 
-pub fn show_ports_summary(ports: &Vec<RawDpdkPort>) {
+pub fn show_ports_summary(ports: &Vec<(RawDpdkPort, Option<Box<dyn DpdkPortData>>)>) {
     let mut name_buf: [c_char; RTE_ETH_NAME_MAX_LEN as usize] =
         [0 as c_char; RTE_ETH_NAME_MAX_LEN as usize];
     let title = format!("{:<4}    {:<32} {:<14}", "Port", "Name", "Driver");
     println!("{title}");
-    ports.iter().for_each(|p| unsafe {
+    ports.iter().for_each(|(p, _)| unsafe {
         let _rc = rte_eth_dev_get_name_by_port(p.port_id, name_buf.as_mut_ptr());
         let name = CStr::from_ptr(name_buf.as_ptr());
         let drv = CStr::from_ptr(p.port_conf.dev_info.driver_name);

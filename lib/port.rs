@@ -67,7 +67,7 @@ pub trait DpdkPortCtrl {
     fn start(&mut self) -> Result<(), String>;
 }
 
-pub trait DpdkPortData {
+pub trait DpdkPortData : Send + Sync {
     fn rx_burst(&mut self, queue_id:u16, pkts: *mut *mut rte_mbuf,  pkt_cnt: u16) -> Result<u16, String>;
 }
 

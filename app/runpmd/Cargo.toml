@@ -12,5 +12,6 @@ path = "runpmd.rs"
 
 [dependencies]
 rdpdk = {path = "../.."}
+mlx5 = { path = "../../port/mlx5" }
 
 
