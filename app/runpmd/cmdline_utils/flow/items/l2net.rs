@@ -1,14 +1,14 @@
 use std::mem::offset_of;
-use crate::dpdk_raw::ethdev_driver::rte_ether_hdr;
-use crate::dpdk_raw::rte_ethdev::{
+use rdpdk::dpdk_raw::ethdev_driver::rte_ether_hdr;
+use rdpdk::dpdk_raw::rte_ethdev::{
     rte_flow_item_eth,
     rte_flow_item_type_RTE_FLOW_ITEM_TYPE_ETH
 };
-use crate::cmdline::arg::Arg;
-use crate::cmdline::arg::arg_int::{ArgInt, ByteOrder};
-use crate::cmdline::arg::arg_net::EthAddrArg;
-use crate::cmdline::param::Param;
-use crate::cmdline::flow::items::{FlowItems, Item};
+use rdpdk::cmdline::arg::Arg;
+use rdpdk::cmdline::arg::arg_int::{ArgInt, ByteOrder};
+use rdpdk::cmdline::arg::arg_net::EthAddrArg;
+use rdpdk::cmdline::param::Param;
+use crate::flow::items::{FlowItems, Item};
 
 
 pub(super) fn flow_item_create_eth(items_db: &mut FlowItems) {

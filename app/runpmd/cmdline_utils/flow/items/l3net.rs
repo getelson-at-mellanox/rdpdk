@@ -1,12 +1,12 @@
 use std::mem::offset_of;
-use crate::dpdk_raw::rte_ethdev::{
+use rdpdk::dpdk_raw::rte_ethdev::{
     rte_flow_item_type_RTE_FLOW_ITEM_TYPE_IPV4,
     rte_ipv4_hdr};
-use crate::cmdline::arg::Arg;
-use crate::cmdline::arg::arg_int::ArgInt;
-use crate::cmdline::arg::arg_net::Ipv4AddrArg;
-use crate::cmdline::param::Param;
-use crate::cmdline::flow::items::{FlowItems, Item};
+use rdpdk::cmdline::arg::Arg;
+use rdpdk::cmdline::arg::arg_int::ArgInt;
+use rdpdk::cmdline::arg::arg_net::Ipv4AddrArg;
+use rdpdk::cmdline::param::Param;
+use crate::flow::items::{FlowItems, Item};
 
 pub(super) fn flow_item_create_ipv4(items_db: &mut FlowItems) {
     let src_arg: Box<dyn Arg> = Box::new(Ipv4AddrArg::new());

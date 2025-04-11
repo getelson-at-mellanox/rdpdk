@@ -1,8 +1,8 @@
 use std::collections::HashMap;
-use crate::dpdk_raw::rte_ethdev::{rte_eth_promiscuous_disable, rte_eth_promiscuous_enable};
-use crate::cmdline::arg::*;
-use crate::cmdline::arg::arg_int::ArgInt;
-use crate::cmdline::{ModuleOps};
+use rdpdk::dpdk_raw::rte_ethdev::{rte_eth_promiscuous_disable, rte_eth_promiscuous_enable};
+use rdpdk::cmdline::arg::*;
+use rdpdk::cmdline::arg::arg_int::ArgInt;
+use rdpdk::cmdline::{ModuleOps};
 
 // port [set|show] [all | <port ID>] <command>
 pub struct PortArg;

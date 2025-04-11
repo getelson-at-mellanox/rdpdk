@@ -12,12 +12,6 @@
     lib/
     ├── dpdk_raw/
     ├── cmdline/
-    │   ├── utils/
-    │   │         ├── port/
-    │   │         └── flow/
-    │   │             ├── items/
-    │   │             ├── attr/
-    │   │             └── actions/
     │   ├── param/
     │   └── arg/
     ├── port.rs

@@ -1,4 +1,11 @@
-use rdpdk::cmdline::flow::FlowCmd;
+#[path = "cmdline_utils/flow/flow.rs"]
+pub mod flow;
+
+#[path = "cmdline_utils/port/port.rs"]
+pub mod port;
+
+use flow::FlowCmd;
+use port::PortModule;
 use rdpdk::cmdline::ModuleOps;
 use rdpdk::dpdk_raw::rte_eal::{rte_eal_cleanup, rte_eal_init};
 use std::collections::HashMap;
@@ -29,7 +36,6 @@ use rdpdk::port::{alloc_mbuf_pool, DpdkPortConf, DpdkPortCtrl, DpdkPortData};
 use rdpdk::raw_port::RawDpdkPort;
 use std::sync::Arc;
 use mlx5::Mlx5Port;
-use rdpdk::cmdline::port::PortModule;
 
 fn read_input() -> Result<String, String> {
     let mut buffer = String::new();
