@@ -4,6 +4,7 @@
 
 pub mod mlx5;
 pub mod mlx5_rx;
+pub mod mlx5_tx;
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right

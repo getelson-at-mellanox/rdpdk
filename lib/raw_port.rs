@@ -1,8 +1,10 @@
 use std::ffi::c_void;
 use crate::dpdk_raw::rte_mbuf::rte_mbuf;
-use crate::port::{DpdkPortConf, DpdkPortCtrl, DpdkPortData};
-
-
+use crate::port::{
+    DpdkPortConf,
+    DpdkPortCtrl,
+    DpdkPortData,
+};
 use crate::dpdk_raw::rte_ethdev::{
     rte_eth_conf,
     rte_eth_txconf,

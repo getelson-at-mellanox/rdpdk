@@ -32,7 +32,12 @@ use rdpdk::dpdk_raw::rte_mbuf_core::RTE_MBUF_DEFAULT_BUF_SIZE;
 use rdpdk::dpdk_raw::rte_mempool::rte_mempool;
 use std::thread;
 
-use rdpdk::port::{alloc_mbuf_pool, DpdkPortConf, DpdkPortCtrl, DpdkPortData};
+use rdpdk::port::{
+    alloc_mbuf_pool,
+    DpdkPortConf,
+    DpdkPortCtrl,
+    DpdkPortData,
+};
 use rdpdk::raw_port::RawDpdkPort;
 use std::sync::Arc;
 use mlx5::Mlx5Port;
@@ -150,11 +155,7 @@ fn l2_addr_swap(mbuf: &mut rte_mbuf)
 
 fn io_rx(ports:&mut Vec<(RawDpdkPort, Option<Box<dyn DpdkPortData>>)>) {
     for (port, data_ops) in &mut *ports {
-
         let rx_pkts:[*mut rte_mbuf; 64] = [null_mut(); 64];
-
-        loop {
-
             let rx_burst_res = match data_ops {
                 Some(data_ops) => data_ops.rx_burst(port.port_id, &rx_pkts),
                 None => port.rx_burst(port.port_id, &rx_pkts),
@@ -166,15 +167,18 @@ fn io_rx(ports:&mut Vec<(RawDpdkPort, Option<Box<dyn DpdkPortData>>)>) {
                     let tx_pool:&[*mut rte_mbuf] = &rx_pkts[0..rx_num as usize];
                     if rx_num > 0 {
                         for i in 0..rx_num {
-                            show_packet( & unsafe {*(rx_pkts[i as usize] as *const rte_mbuf)});
-                            l2_addr_swap(&mut unsafe {*(rx_pkts[i as usize] as *mut rte_mbuf)});
+                            show_packet(&unsafe { *(rx_pkts[i as usize] as *const rte_mbuf) });
+                            l2_addr_swap(&mut unsafe { *(rx_pkts[i as usize] as *mut rte_mbuf) });
+
+                            let _ = match data_ops {
+                                Some(data_ops) => data_ops.tx_burst(port.port_id, tx_pool),
+                                None => port.tx_burst(port.port_id, tx_pool),
+                            };
                         }
-                        let _ = port.tx_burst(port.port_id, tx_pool);
                         continue;
                     }
-                },
+                }
             }
-        }
     }
 
 }
@@ -316,7 +320,7 @@ fn main() {
     show_ports_summary(&ports);
 
     let _ = thread::spawn(move || {
-        io_rx(&mut ports);
+        loop { io_rx(&mut ports); }
     });
 
     let cli_thread = thread::spawn(move || {
