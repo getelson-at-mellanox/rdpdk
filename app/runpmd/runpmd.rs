@@ -143,8 +143,8 @@ fn do_rx(ports:&mut Vec<(RawDpdkPort, Option<Box<dyn DpdkPortData>>)>) {
         loop {
 
             let rx_burst_res = match data_ops {
-                Some(data_ops) => data_ops.rx_burst(port.port_id, &mut rx_pool as *mut *mut _, 64u16),
-                None => port.rx_burst(port.port_id, &mut rx_pool as *mut *mut _, 64u16),
+                Some(data_ops) => data_ops.rx_burst(port.port_id, &rx_pool),
+                None => port.rx_burst(port.port_id, &rx_pool),
             };
 
             match rx_burst_res {

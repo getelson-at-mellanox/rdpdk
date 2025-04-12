@@ -62,25 +62,25 @@ impl Mlx5Port {
 }
 
 impl DpdkPortData for Mlx5Port<Mlx5RxDef> {
-    fn rx_burst(&mut self, queue_id: u16, pkts: *mut *mut rte_mbuf, pkt_cnt: u16) -> Result<u16, String> {
+    fn rx_burst(&mut self, queue_id: u16, pkts: &[*mut rte_mbuf]) -> Result<u16, String> {
 
         Ok(unsafe {
             mlx5_rx_burst(
                 (*self.rxq_data).wrapping_add(queue_id as usize) as *mut c_void,
-                pkts as *mut _,
-                pkt_cnt
+                pkts.as_ptr() as *mut _,
+                pkts.len() as u16
             )
         })
     }
 }
 
 impl DpdkPortData for Mlx5Port<Mlx5RxVec> {
-    fn rx_burst(&mut self, queue_id: u16, pkts: *mut *mut rte_mbuf, pkt_cnt: u16) -> Result<u16, String> {
+    fn rx_burst(&mut self, queue_id: u16, pkts: &[*mut rte_mbuf]) -> Result<u16, String> {
         Ok(unsafe {
             mlx5_rx_burst_vec(
                 (*self.rxq_data).wrapping_add(queue_id as usize) as *mut c_void,
-                pkts as *mut _,
-                pkt_cnt
+                pkts.as_ptr() as *mut _,
+                pkts.len() as u16,
             )
         })
     }

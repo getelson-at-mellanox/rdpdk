@@ -101,14 +101,14 @@ impl DpdkPortCtrl for RawDpdkPort {
 }
 
 impl DpdkPortData for RawDpdkPort {
-    fn rx_burst(&mut self, queue_id:u16, pkts: *mut *mut rte_mbuf,  pkt_cnt: u16) -> Result<u16, String> {
+    fn rx_burst(&mut self, queue_id:u16, pkts: &[*mut rte_mbuf]) -> Result<u16, String> {
 
         let ops = unsafe { &mut *self.raw_fp_ops.unwrap() };
         let rxqd:*mut c_void = unsafe { *ops.rxq.data.wrapping_add(queue_id as usize) };
 
         let nb_rx: u16 = unsafe {
             let rxfn = ops.rx_pkt_burst.unwrap();
-            rxfn(rxqd, pkts as _, pkt_cnt)
+            rxfn(rxqd, pkts.as_ptr() as _, pkts.len() as u16)
         };
 
         Ok(nb_rx)
