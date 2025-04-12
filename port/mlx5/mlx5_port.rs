@@ -72,6 +72,10 @@ impl DpdkPortData for Mlx5Port<Mlx5RxDef> {
             )
         })
     }
+
+    fn tx_burst(&mut self, _queue_id: u16, _pkts: &[*mut rte_mbuf]) -> Result<u16, String> {
+        todo!()
+    }
 }
 
 impl DpdkPortData for Mlx5Port<Mlx5RxVec> {
@@ -83,6 +87,10 @@ impl DpdkPortData for Mlx5Port<Mlx5RxVec> {
                 pkts.len() as u16,
             )
         })
+    }
+
+    fn tx_burst(&mut self, _queue_id: u16, _pkts: &[*mut rte_mbuf]) -> Result<u16, String> {
+        todo!()
     }
 }
 

@@ -113,4 +113,15 @@ impl DpdkPortData for RawDpdkPort {
 
         Ok(nb_rx)
     }
+
+    fn tx_burst(&mut self, queue_id:u16, pkts: &[*mut rte_mbuf]) -> Result<u16, String> {
+        let ops = unsafe { &mut *self.raw_fp_ops.unwrap() };
+        let txqd:*mut c_void = unsafe { *ops.txq.data.wrapping_add(queue_id as usize) };
+        let nb_tx: u16 = unsafe {
+            let txfn = ops.tx_pkt_burst.unwrap();
+            txfn(txqd, pkts.as_ptr() as _, pkts.len() as u16)
+        };
+
+        Ok(nb_tx)
+    }
 }
