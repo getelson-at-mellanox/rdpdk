@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::{env, slice};
 use std::ffi::{CStr, CString};
 use std::io::Write;
-use std::os::raw::{c_char, c_int, c_uint};
+use std::os::raw::{c_char, c_int};
 use std::ptr::null_mut;
 use rdpdk::dpdk_raw::rte_ethdev::{
     rte_eth_conf,
@@ -27,7 +27,7 @@ use rdpdk::dpdk_raw::rte_ethdev::{
     rust_get_port_eth_device,
     RTE_ETH_NAME_MAX_LEN, RTE_ETH_RSS_IP
 };
-use rdpdk::dpdk_raw::rte_mbuf::{rte_mbuf, rte_pktmbuf_free_bulk};
+use rdpdk::dpdk_raw::rte_mbuf::{rte_mbuf};
 use rdpdk::dpdk_raw::rte_mbuf_core::RTE_MBUF_DEFAULT_BUF_SIZE;
 use rdpdk::dpdk_raw::rte_mempool::rte_mempool;
 use std::thread;
@@ -135,28 +135,41 @@ fn show_packet(mbuf: &rte_mbuf) {
     );
 }
 
-fn do_rx(ports:&mut Vec<(RawDpdkPort, Option<Box<dyn DpdkPortData>>)>) {
+fn l2_addr_swap(mbuf: &mut rte_mbuf)
+{
+    let data_off = unsafe {mbuf.__bindgen_anon_1.__bindgen_anon_1.data_off};
+    let raw_ptr = mbuf.buf_addr.wrapping_add(data_off as usize) as *mut u8;
+    let eth: &mut [u8] = unsafe { slice::from_raw_parts_mut(raw_ptr, 14) };
+
+    for i in 0..6 {
+        let aux = eth[i];
+        eth[i] = eth[i + 6];
+        eth[i + 6] = aux;
+    }
+}
+
+fn io_rx(ports:&mut Vec<(RawDpdkPort, Option<Box<dyn DpdkPortData>>)>) {
     for (port, data_ops) in &mut *ports {
 
-        let mut rx_pool:[*mut rte_mbuf; 64] = [null_mut(); 64];
+        let rx_pkts:[*mut rte_mbuf; 64] = [null_mut(); 64];
 
         loop {
 
             let rx_burst_res = match data_ops {
-                Some(data_ops) => data_ops.rx_burst(port.port_id, &rx_pool),
-                None => port.rx_burst(port.port_id, &rx_pool),
+                Some(data_ops) => data_ops.rx_burst(port.port_id, &rx_pkts),
+                None => port.rx_burst(port.port_id, &rx_pkts),
             };
 
             match rx_burst_res {
                 Err(err) => println!("{err}"),
                 Ok(rx_num) => {
+                    let tx_pool:&[*mut rte_mbuf] = &rx_pkts[0..rx_num as usize];
                     if rx_num > 0 {
-                        unsafe {rte_pktmbuf_free_bulk(
-                            &mut rx_pool as *mut *mut _,
-                            rx_num as c_uint)};
                         for i in 0..rx_num {
-                            show_packet( & unsafe {*(rx_pool[i as usize] as *const rte_mbuf)});
+                            show_packet( & unsafe {*(rx_pkts[i as usize] as *const rte_mbuf)});
+                            l2_addr_swap(&mut unsafe {*(rx_pkts[i as usize] as *mut rte_mbuf)});
                         }
+                        let _ = port.tx_burst(port.port_id, tx_pool);
                         continue;
                     }
                 },
@@ -303,7 +316,7 @@ fn main() {
     show_ports_summary(&ports);
 
     let _ = thread::spawn(move || {
-        do_rx(&mut ports);
+        io_rx(&mut ports);
     });
 
     let cli_thread = thread::spawn(move || {
