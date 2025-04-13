@@ -1,0 +1,27 @@
+From faa4e659b8205b400663aceba13bb694d98005d4 Mon Sep 17 00:00:00 2001
+From: Gregory Etelson <getelson@nvidia.com>
+Date: Sun, 13 Apr 2025 09:17:11 +0300
+Subject: [PATCH 3/3] rust: export mlx5 Tx function
+
+- mlx5_tx_burst_none_empw
+
+Signed-off-by: Gregory Etelson <getelson@nvidia.com>
+---
+ drivers/net/mlx5/version.map | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/net/mlx5/version.map b/drivers/net/mlx5/version.map
+index 632382cac7..78a60f4314 100644
+--- a/drivers/net/mlx5/version.map
++++ b/drivers/net/mlx5/version.map
+@@ -4,6 +4,7 @@ DPDK_25 {
+ 	mlx5_rx_burst;
+ 	mlx5_rx_burst_vec;
+ 	mlx5_check_vec_rx_support;
++	mlx5_tx_burst_none_empw;
+ 
+ 	local: *;
+ };
+-- 
+2.45.2
+
