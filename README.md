@@ -37,6 +37,19 @@
 
 - PKG_CONFIG_PATH - should point to DPDK installation
 
+### IO
+
+Rdpdk defines port.rs::DpdkPortData trait for IO operations:
+
+- Rx: fn rx_burst(&mut self, queue_id:u16, pkts: &\[*mut rte_mbuf]) -> Result<u16, String>;
+- Tx: fn rx_burst(&mut self, queue_id:u16, pkts: &\[*mut rte_mbuf]) -> Result<u16, String>;
+
+raw_port.rs::RawDpdkPort implements DpdkPortData for the general DPDK Rx/Tx through calls to
+`rte_eth_fp_ops::rx_pkt_burst` and `rte_eth_fp_ops::tx_pkt_burst`
+
+mlx5_port.rs::Mlx5Port implements DpdkPortData with dedicated MLX5 Rx/Tx functions.
+  
+
 ## runpmd
 
 runpmd is a testpmd like application for Rust.
