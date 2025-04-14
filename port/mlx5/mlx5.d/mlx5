@@ -80,6 +80,8 @@ bindgen_opt="--wrap-unsafe-ops --no-layout-tests \
   --no-derive-debug \
   --blocklist-var  RTE_EAL_PMD_PATH  \
   --allowlist-type mlx5_priv \
+  --allowlist-function mlx5_select_rx.* \
+  --allowlist-function mlx5_select_tx.* \
 "
 
 bindgen $bindgen_opt -o mlx5.rs ${DPDK_SOURCE_ROOT}/drivers/net/mlx5/mlx5.h -- $bindgen_clang_opt

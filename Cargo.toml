@@ -13,6 +13,7 @@ path = "rdpdk.rs"
 members = [
     ".",
     "app/runpmd",
+    "port/mlx5",
 ]
 
 [dependencies]

@@ -20819,6 +20819,18 @@ pub struct rte_hairpin_peer_info {
     pub tx_explicit: u16,
     pub manual_bind: u16,
 }
+unsafe extern "C" {
+    pub fn mlx5_select_rx_function(dev: *mut rte_eth_dev) -> eth_rx_burst_t;
+}
+unsafe extern "C" {
+    pub fn mlx5_select_rx_function_index(dev: *mut rte_eth_dev) -> u32;
+}
+unsafe extern "C" {
+    pub fn mlx5_select_tx_function(dev: *mut rte_eth_dev) -> eth_tx_burst_t;
+}
+unsafe extern "C" {
+    pub fn mlx5_select_tx_function_index(dev: *mut rte_eth_dev) -> ::std::os::raw::c_int;
+}
 #[doc = "< class handle."]
 #[repr(C)]
 #[derive(Copy, Clone)]

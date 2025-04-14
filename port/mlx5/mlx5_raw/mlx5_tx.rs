@@ -9437,6 +9437,14 @@ pub const rte_flow_update_quota_op_RTE_FLOW_UPDATE_QUOTA_SET: rte_flow_update_qu
 pub const rte_flow_update_quota_op_RTE_FLOW_UPDATE_QUOTA_ADD: rte_flow_update_quota_op = 1;
 #[doc = " @warning\n @b EXPERIMENTAL: this API may change without prior notice.\n\n Indirect QUOTA update operations.\n\n @see struct rte_flow_update_quota"]
 pub type rte_flow_update_quota_op = ::std::os::raw::c_uint;
+#[doc = " @internal Send output packets on a transmit queue of an Ethernet device."]
+pub type eth_tx_burst_t = ::std::option::Option<
+    unsafe extern "C" fn(
+        txq: *mut ::std::os::raw::c_void,
+        tx_pkts: *mut *mut rte_mbuf,
+        nb_pkts: u16,
+    ) -> u16,
+>;
 #[doc = " No traffic metering performed, the output color is the same as the\n input color for every input packet. The meter of the MTR object is\n working in pass-through mode, having same effect as meter disable.\n @see rte_mtr_meter_disable()"]
 pub const rte_mtr_algorithm_RTE_MTR_NONE: rte_mtr_algorithm = 0;
 #[doc = " Single Rate Three Color Marker (srTCM) - IETF RFC 2697."]
@@ -13967,6 +13975,15 @@ pub struct mlx5_quota {
 }
 #[repr(C)]
 #[derive(Copy, Clone)]
+pub struct mlx5_txoff_func {
+    pub func: eth_tx_burst_t,
+    pub olx: ::std::os::raw::c_uint,
+}
+unsafe extern "C" {
+    pub static txoff_func: [mlx5_txoff_func; 0usize];
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
 pub struct mlx5_txq_stats {
     #[doc = "< Total of successfully sent packets."]
     pub opackets: u64,
@@ -14483,13 +14500,6 @@ impl mlx5_txq_data {
         });
         __bindgen_bitfield_unit
     }
-}
-unsafe extern "C" {
-    pub fn mlx5_tx_burst_none_empw(
-        txq: *mut ::std::os::raw::c_void,
-        pkts: *mut *mut rte_mbuf,
-        pkts_n: u16,
-    ) -> u16;
 }
 #[doc = "< class handle."]
 #[repr(C)]

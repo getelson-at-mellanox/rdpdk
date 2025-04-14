@@ -1,38 +1,28 @@
-use std::marker::PhantomData;
 use std::os::raw::c_void;
 use rdpdk::dpdk_raw::ethdev_driver::{rte_eth_dev};
 use rdpdk::dpdk_raw::rte_ethdev::{rust_get_port_eth_device};
-use rdpdk::dpdk_raw::rte_mbuf::rte_mbuf;
 use rdpdk::port::{DpdkPortData};
-use crate::mlx5_raw::mlx5::mlx5_priv;
-use crate::mlx5_raw::mlx5_rx::{
-    mlx5_check_vec_rx_support,
-    mlx5_rx_burst,
-    mlx5_rx_burst_vec,
-    mlx5_rxq_data,
+use crate::mlx5_raw::mlx5::{
+    mlx5_priv,
+    mlx5_select_rx_function_index,
+    mlx5_select_tx_function_index
 };
-use crate::mlx5_raw::mlx5_tx::{
-    mlx5_tx_burst_none_empw,
-    mlx5_txq_data,
-};
+use crate::mlx5_raw::mlx5_rx::{mlx5_rx_functions, mlx5_rxq_data};
+use crate::mlx5_raw::mlx5_tx::{mlx5_txq_data, txoff_func};
+use rdpdk::dpdk_raw::rte_mbuf::rte_mbuf;
 
 #[path = "mlx5_raw/mlx5_raw.rs"]
 pub mod mlx5_raw;
 
-pub trait Mlx5Rx {}
+unsafe impl Send for Mlx5Port {}
+unsafe impl Sync for Mlx5Port {}
 
-pub struct Mlx5RxDef;
-impl Mlx5Rx for Mlx5RxDef {}
-pub struct Mlx5RxVec;
-impl Mlx5Rx for Mlx5RxVec {}
-
-unsafe impl<Rx: Mlx5Rx> Send for Mlx5Port<Rx> {}
-unsafe impl<Rx: Mlx5Rx> Sync for Mlx5Port<Rx> {}
-pub struct Mlx5Port<Rx: Mlx5Rx = Mlx5RxDef> {
+pub struct Mlx5Port {
     pub port_id: u16,
+    rx_id: u32,
+    tx_id: i32,
     rxq_data: *mut *mut mlx5_rxq_data,
     txq_data: *mut *mut mlx5_txq_data,
-    __phd: PhantomData<Rx>,
 }
 
 impl Mlx5Port {
@@ -54,6 +44,10 @@ impl Mlx5Port {
                 .rx_queues as *mut *mut mlx5_rxq_data
         };
 
+        // TODO: fix eth_dev initialization
+        let rx_id = 0 * unsafe { mlx5_select_rx_function_index(dev as *mut _) };
+        let tx_td = unsafe { mlx5_select_tx_function_index(dev as *mut _)};
+
         let txq_data = unsafe {
             mlx5_priv.
                 dev_data.
@@ -62,60 +56,51 @@ impl Mlx5Port {
                 .tx_queues as *mut *mut mlx5_txq_data
         };
 
-        let rc = unsafe { mlx5_check_vec_rx_support(dev as *const _ as *mut _) };
-        if rc > 0 {
-            Box::new(Mlx5Port::<Mlx5RxVec> {
-                port_id: port_id,
-                rxq_data: rxq_data,
-                txq_data: txq_data,
-                __phd: Default::default()
-            })
-        } else {
-            Box::new(Mlx5Port::<Mlx5RxDef> {
-                port_id: port_id,
-                rxq_data:rxq_data,
-                txq_data: txq_data,
-                __phd: Default::default()
-            })
-        }
+        Box::new(Mlx5Port {
+            port_id: port_id,
+            rx_id: rx_id,
+            tx_id: tx_td,
+            rxq_data: rxq_data,
+            txq_data: txq_data,
+        })
     }
 }
 
-impl DpdkPortData for Mlx5Port<Mlx5RxDef> {
+impl DpdkPortData for Mlx5Port {
     fn rx_burst(&mut self, queue_id: u16, pkts: &[*mut rte_mbuf]) -> Result<u16, String> {
 
+        let rxfn = unsafe {
+            mlx5_rx_functions
+                .as_ptr()
+                .wrapping_add(self.rx_id as usize)
+                .as_ref()
+                .unwrap()
+                .unwrap()
+        };
+
         Ok(unsafe {
-            mlx5_rx_burst(
+            rxfn(
                 (*self.rxq_data).wrapping_add(queue_id as usize) as *mut c_void,
                 pkts.as_ptr() as *mut _,
                 pkts.len() as u16
             )
         })
     }
-    fn tx_burst(&mut self, queue_id: u16, pkts: &[*mut rte_mbuf]) -> Result<u16, String> {
-        Ok(unsafe {
-            mlx5_tx_burst_none_empw(
-                (*self.txq_data).wrapping_add(queue_id as usize) as *mut c_void,
-                pkts.as_ptr() as *mut _,
-                pkts.len() as u16)
-        })
-    }
-}
-
-impl DpdkPortData for Mlx5Port<Mlx5RxVec> {
-    fn rx_burst(&mut self, queue_id: u16, pkts: &[*mut rte_mbuf]) -> Result<u16, String> {
-        Ok(unsafe {
-            mlx5_rx_burst_vec(
-                (*self.rxq_data).wrapping_add(queue_id as usize) as *mut c_void,
-                pkts.as_ptr() as *mut _,
-                pkts.len() as u16,
-            )
-        })
-    }
 
     fn tx_burst(&mut self, queue_id: u16, pkts: &[*mut rte_mbuf]) -> Result<u16, String> {
+
+        let txfn = unsafe {
+            txoff_func
+                .as_ptr()
+                .wrapping_add(self.tx_id as usize)
+                .as_ref()
+                .unwrap()
+                .func
+                .unwrap()
+        };
+
         Ok(unsafe {
-            mlx5_tx_burst_none_empw(
+            txfn(
                 (*self.txq_data).wrapping_add(queue_id as usize) as *mut c_void,
                 pkts.as_ptr() as *mut _,
                 pkts.len() as u16,
@@ -123,4 +108,3 @@ impl DpdkPortData for Mlx5Port<Mlx5RxVec> {
         })
     }
 }
-
