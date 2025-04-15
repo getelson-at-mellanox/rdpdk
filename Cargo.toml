@@ -18,5 +18,6 @@ members = [
 
 [dependencies]
 num-traits = "0.2.19"
+once_cell = "1.21.3"
 
 

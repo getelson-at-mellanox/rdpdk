@@ -15,32 +15,25 @@ use std::io::Write;
 use std::os::raw::{c_char, c_int};
 use std::ptr::null_mut;
 use rdpdk::dpdk_raw::rte_ethdev::{
-    rte_eth_conf,
     rte_eth_dev_count_avail,
     rte_eth_dev_get_name_by_port,
-    rte_eth_dev_socket_id,
-    rte_eth_rss_conf,
-    rte_eth_rx_mq_mode_RTE_ETH_MQ_RX_RSS,
-    rte_eth_rx_mq_mode_RTE_ETH_MQ_RX_VMDQ_DCB_RSS,
-    rte_eth_rxconf,
-    rte_eth_txconf,
     rust_get_port_eth_device,
-    RTE_ETH_NAME_MAX_LEN, RTE_ETH_RSS_IP
+    RTE_ETH_NAME_MAX_LEN,
 };
 use rdpdk::dpdk_raw::rte_mbuf::{rte_mbuf};
 use rdpdk::dpdk_raw::rte_mbuf_core::RTE_MBUF_DEFAULT_BUF_SIZE;
 use rdpdk::dpdk_raw::rte_mempool::rte_mempool;
 use std::thread;
 
-use rdpdk::port::{
-    alloc_mbuf_pool,
-    DpdkPortConf,
-    DpdkPortCtrl,
-    DpdkPortData,
-};
-use rdpdk::port::raw_port::RawDpdkPort;
+use rdpdk::port::{alloc_mbuf_pool, DpdkPort};
+use rdpdk::port::raw_port::{PortParams, RawDpdkPort};
 use std::sync::Arc;
-use mlx5::Mlx5Port;
+
+use rdpdk::port::init::{
+    PciVendor,
+    PciDevice,
+    KNOWN_PORTS,
+};
 
 fn read_input() -> Result<String, String> {
     let mut buffer = String::new();
@@ -153,13 +146,10 @@ fn l2_addr_swap(mbuf: &mut rte_mbuf)
     }
 }
 
-fn io_rx(ports:&mut Vec<(RawDpdkPort, Option<Box<dyn DpdkPortData>>)>) {
-    for (port, data_ops) in &mut *ports {
+fn do_io(ports:&mut Vec<Box<dyn DpdkPort>>) {
+    for port in &mut *ports {
         let rx_pkts:[*mut rte_mbuf; 64] = [null_mut(); 64];
-            let rx_burst_res = match data_ops {
-                Some(data_ops) => data_ops.rx_burst(port.port_id, &rx_pkts),
-                None => port.rx_burst(port.port_id, &rx_pkts),
-            };
+            let rx_burst_res = port.rx_burst(port.port_id(), &rx_pkts);
 
             match rx_burst_res {
                 Err(err) => println!("{err}"),
@@ -170,10 +160,7 @@ fn io_rx(ports:&mut Vec<(RawDpdkPort, Option<Box<dyn DpdkPortData>>)>) {
                             show_packet(&unsafe { *(rx_pkts[i as usize] as *const rte_mbuf) });
                             l2_addr_swap(&mut unsafe { *(rx_pkts[i as usize] as *mut rte_mbuf) });
 
-                            let _ = match data_ops {
-                                Some(data_ops) => data_ops.tx_burst(port.port_id, tx_pool),
-                                None => port.tx_burst(port.port_id, tx_pool),
-                            };
+                            let _ = port.tx_burst(port.port_id(), tx_pool);
                         }
                         continue;
                     }
@@ -207,7 +194,9 @@ fn register_cmd_modules() -> CmdModule {
     modules
 }
 
-fn is_mlx5_port(port_id: u16) -> bool {
+fn query_port_businfo(port_id: u16) -> (PciVendor, PciDevice) {
+
+    // businfo: "vendor_id=15b3, device_id=101d"
 
     let businfo = unsafe {
         let dev : &rdpdk::dpdk_raw::ethdev_driver::rte_eth_dev =
@@ -222,65 +211,52 @@ fn is_mlx5_port(port_id: u16) -> bool {
 
     println!("=== businfo: {}", &businfo);
 
-    businfo.contains("vendor_id=15b3")
+    let vd:Vec<String> = businfo.split(", ")
+        .map(|x| x.to_string())
+        .collect();
+    let vendor: Vec<&str> = vd[0].split("=")
+        .collect();
+    let device: Vec<&str> = vd[1].split("=")
+        .collect();
+
+    (u16::from_str_radix(vendor[1], 16).unwrap(),
+        u16::from_str_radix(device[1], 16).unwrap())
+
 }
 
-fn start_port(port_id: u16, port_config: Arc<PortConfig>, pool: *mut rte_mempool) -> Result<(RawDpdkPort, Option<Box<dyn DpdkPortData>>), String> {
-    let dev_conf: rte_eth_conf = unsafe { std::mem::zeroed() };
-    let tx_conf: rte_eth_txconf = unsafe { std::mem::zeroed() };
-    let rx_conf: rte_eth_rxconf = unsafe { std::mem::zeroed() };
+fn start_port(port_id: u16, port_params: Arc<PortParams>) -> Result<Box<dyn DpdkPort>, String>
+{
 
-    let mut port_conf = DpdkPortConf::new_from(
-        port_id,
-        dev_conf,
-        tx_conf,
-        rx_conf,
-        1,
-        1,
-        64,
-        64,
-    ).unwrap();
+    let (vendor, device) = query_port_businfo(port_id);
 
-    port_conf.dev_conf.rx_adv_conf.rss_conf = rte_eth_rss_conf {
-        rss_key: null_mut(),
-        rss_key_len: 0,
-        rss_hf: if port_config.rxq_num > 1 {
-            RTE_ETH_RSS_IP as u64 & port_conf.dev_info.flow_type_rss_offloads
-        } else { 0 },
-        algorithm: 0 as rdpdk::dpdk_raw::rte_ethdev::rte_eth_hash_function,
-    };
-
-    if port_conf.dev_conf.rx_adv_conf.rss_conf.rss_hf != 0 {
-        port_conf.dev_conf.rxmode.mq_mode = rte_eth_rx_mq_mode_RTE_ETH_MQ_RX_VMDQ_DCB_RSS
-            & rte_eth_rx_mq_mode_RTE_ETH_MQ_RX_RSS;
+    for (v, func) in KNOWN_PORTS.lock().unwrap().iter() {
+        if vendor != *v { continue }
+            match func(port_id, device, port_params.clone()) {
+                Ok(port) => { return Ok(port); },
+                Err(_e) => { continue; }
+            }
     }
-
-    let mut port = RawDpdkPort::init(port_id, port_conf).unwrap();
-
-    let socket_id = unsafe { rte_eth_dev_socket_id(port_id) } as u32;
-    let _ = port.configure();
-    let _ = port.config_txq(0, socket_id);
-    let _ = port.config_rxq(0, pool as _, socket_id);
-    let _ = port.start();
-
-    let data_ops: Option<Box<dyn DpdkPortData>> = if is_mlx5_port(port_id) {
-        Some(Mlx5Port::from(port.port_id))
-    } else {
-        None
-    };
-
-    Ok((port, data_ops))
+    println!("port {port_id}: fallback to raw port");
+    Ok(Box::new(RawDpdkPort::init(port_id, port_params).unwrap()))
 }
 
-struct PortConfig {
-    rxq_num: u16,
-    _txq_num: u16,
-}
 
-fn init_port_configuration(_args: &Vec<String>) -> PortConfig {
-    PortConfig {
+
+fn set_port_params(_args: &Vec<String>) -> PortParams {
+
+    let mbuf_pool: *mut rte_mempool = alloc_mbuf_pool(
+        "runpmd_default_mbuf_pool",
+        1024,
+        0,
+        0,
+        RTE_MBUF_DEFAULT_BUF_SIZE as u16,
+        0,
+    ).unwrap() as *mut rte_mempool;
+
+    PortParams {
         rxq_num: 1,
         _txq_num: 1,
+        rxq_mbuf_pool: mbuf_pool,
     }
 }
 
@@ -295,21 +271,11 @@ fn main() {
         }
     };
 
-    let port_config = Arc::new(
-        init_port_configuration(&app_params));
+    let port_params = Arc::new(set_port_params(&app_params));
 
-    let mbuf_pool: *mut rte_mempool = alloc_mbuf_pool(
-        "runpmd_default_mbuf_pool",
-        1024,
-        0,
-        0,
-        RTE_MBUF_DEFAULT_BUF_SIZE as u16,
-        0,
-    ).unwrap() as *mut rte_mempool;
-
-    let mut ports: Vec<(RawDpdkPort, Option<Box<dyn DpdkPortData>>)> = Vec::new();
+    let mut ports: Vec<Box<dyn DpdkPort>> = Vec::new();
     for port_id in 0..port_num {
-        match start_port(port_id, port_config.clone(), mbuf_pool) {
+        match start_port(port_id, port_params.clone()) {
             Ok(p) => ports.push(p),
             Err(e) => {
                 println!("{e}");
@@ -320,7 +286,7 @@ fn main() {
     show_ports_summary(&ports);
 
     let _ = thread::spawn(move || {
-        loop { io_rx(&mut ports); }
+        loop { do_io(&mut ports); }
     });
 
     let cli_thread = thread::spawn(move || {
@@ -329,20 +295,23 @@ fn main() {
     });
 
     cli_thread.join().unwrap();
+    /// without direct reference to the mlx5 port linker does not include it
+    /// in the build.
+    mlx5::mlx5_pol(); // TODO: remove
 }
 
-pub fn show_ports_summary(ports: &Vec<(RawDpdkPort, Option<Box<dyn DpdkPortData>>)>) {
+pub fn show_ports_summary(ports: &Vec<Box<dyn DpdkPort>>) {
     let mut name_buf: [c_char; RTE_ETH_NAME_MAX_LEN as usize] =
         [0 as c_char; RTE_ETH_NAME_MAX_LEN as usize];
     let title = format!("{:<4}    {:<32} {:<14}", "Port", "Name", "Driver");
     println!("{title}");
-    ports.iter().for_each(|(p, _)| unsafe {
-        let _rc = rte_eth_dev_get_name_by_port(p.port_id, name_buf.as_mut_ptr());
+    ports.iter().for_each(|p| unsafe {
+        let _rc = rte_eth_dev_get_name_by_port(p.port_id(), name_buf.as_mut_ptr());
         let name = CStr::from_ptr(name_buf.as_ptr());
-        let drv = CStr::from_ptr(p.port_conf.dev_info.driver_name);
+        let drv = CStr::from_ptr(p.port_conf().dev_info.driver_name);
         let summary = format!(
             "{:<4}    {:<32} {:<14}",
-            p.port_id,
+            p.port_id(),
             name.to_str().unwrap(),
             drv.to_str().unwrap()
         );

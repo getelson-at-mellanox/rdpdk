@@ -1,31 +1,28 @@
 
 ## Software Requirements
 
-- rustc 1.85.0
+- rustc 1.86.0
 - clang
 - bindgen 0.71.1
 
 ## library structure
 
-    Library structure:
+Library structure:
 
-    lib/
-    ├── dpdk_raw/
-    ├── cmdline/
-    │   ├── param/
-    │   └── arg/
-    ├── port.rs
-    └── raw_port.rs
+```
+lib
+├── port
+├── dpdk_raw
+└── cmdline
+    ├── param
+    └── arg
+```
 
+- port: port API
 - dpdk_raw: DPDK bindings library
 - cmdline: interactive command line library
   - param: command line parameters API
   - arg: command line argumets API
-  - utils: command line implementations
-    - port: port configuration
-    - flow: flow configuration
-- port: port API
-- raw_port: implement RawDpdkPort
 
 ### Environemnt Variables
 
@@ -44,10 +41,10 @@ Rdpdk defines port.rs::DpdkPortData trait for IO operations:
 - Rx: fn rx_burst(&mut self, queue_id:u16, pkts: &\[*mut rte_mbuf]) -> Result<u16, String>;
 - Tx: fn rx_burst(&mut self, queue_id:u16, pkts: &\[*mut rte_mbuf]) -> Result<u16, String>;
 
-raw_port.rs::RawDpdkPort implements DpdkPortData for the general DPDK Rx/Tx through calls to
+raw_port.rs::RawDpdkPort Rx/Tx IO through calls to
 `rte_eth_fp_ops::rx_pkt_burst` and `rte_eth_fp_ops::tx_pkt_burst`
 
-mlx5_port.rs::Mlx5Port implements DpdkPortData with dedicated MLX5 Rx/Tx functions.
+mlx5_port.rs::Mlx5Port implements Rx/Tx IO with dedicated MLX5 functions.
   
 
 ## runpmd
@@ -83,3 +80,9 @@ ipv4 src is 16.16.16.16 dst is 15.15.15.15 / end actions drop / end
 
 >>> exit
 ```
+
+### Limitations
+
+- Ports must be explicitly referenced in EAL command line with the `-a` parameter.
+
+

@@ -1,4 +1,5 @@
 pub mod raw_port;
+pub mod init;
 
 use std::ffi::{
     CString
@@ -60,19 +61,22 @@ impl DpdkPortConf {
     }
 }
 
-pub trait DpdkPortCtrl {
+pub trait DpdkPort: Send + Sync {
+    fn port_id(&self) -> u16;
+    fn port_conf(&self) -> &DpdkPortConf;
     fn configure(&mut self) -> Result<(), String>;
 
     fn config_txq(&mut self, queue_id: u16, socket_id:u32) -> Result<rte_eth_txconf, String>;
     fn config_rxq(&mut self, queue_id: u16, pool: *mut rte_mempool, socket_id:u32) -> Result<rte_eth_rxconf, String>;
-
     fn start(&mut self) -> Result<(), String>;
-}
 
-pub trait DpdkPortData : Send + Sync {
     fn rx_burst(&mut self, queue_id:u16, pkts: &[*mut rte_mbuf]) -> Result<u16, String>;
     fn tx_burst(&mut self, queue_id:u16, pkts: &[*mut rte_mbuf]) -> Result<u16, String>;
 }
+
+pub trait DpdkFlow : DpdkPort {}
+
+pub trait DpdkTmplFlow : DpdkPort {}
 
 pub fn alloc_mbuf_pool(
     name: &str,

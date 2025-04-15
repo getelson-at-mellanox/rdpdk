@@ -1,7 +1,8 @@
 use std::os::raw::c_void;
+use std::sync::Arc;
 use rdpdk::dpdk_raw::ethdev_driver::{rte_eth_dev};
-use rdpdk::dpdk_raw::rte_ethdev::{rust_get_port_eth_device};
-use rdpdk::port::{DpdkPortData};
+use rdpdk::dpdk_raw::rte_ethdev::{rte_eth_rxconf, rte_eth_txconf, rte_mempool, rust_get_port_eth_device};
+use rdpdk::port::{DpdkPort, DpdkPortConf};
 use crate::mlx5_raw::mlx5::{
     mlx5_priv,
     mlx5_select_rx_function_index,
@@ -18,7 +19,8 @@ unsafe impl Send for Mlx5Port {}
 unsafe impl Sync for Mlx5Port {}
 
 pub struct Mlx5Port {
-    pub port_id: u16,
+    dpdk_port: RawDpdkPort,
+
     rx_id: u32,
     tx_id: i32,
     rxq_data: *mut *mut mlx5_rxq_data,
@@ -26,7 +28,10 @@ pub struct Mlx5Port {
 }
 
 impl Mlx5Port {
-    pub fn from(port_id: u16) -> Box<dyn DpdkPortData>{
+    pub fn from(port_id: u16, port_params: Arc<PortParams>) -> Self {
+
+        let dpdk_port = RawDpdkPort::init(port_id, port_params).unwrap();
+
         let dev: *mut rdpdk::dpdk_raw::ethdev_driver::rte_eth_dev = unsafe {
             rust_get_port_eth_device(port_id) as *mut rte_eth_dev
         };
@@ -56,17 +61,17 @@ impl Mlx5Port {
                 .tx_queues as *mut *mut mlx5_txq_data
         };
 
-        Box::new(Mlx5Port {
-            port_id: port_id,
+        Mlx5Port {
+            dpdk_port: dpdk_port,
             rx_id: rx_id,
             tx_id: tx_td,
             rxq_data: rxq_data,
             txq_data: txq_data,
-        })
+        }
     }
 }
 
-impl DpdkPortData for Mlx5Port {
+impl DpdkPort for Mlx5Port {
     fn rx_burst(&mut self, queue_id: u16, pkts: &[*mut rte_mbuf]) -> Result<u16, String> {
 
         let rxfn = unsafe {
@@ -107,4 +112,74 @@ impl DpdkPortData for Mlx5Port {
             )
         })
     }
+
+    fn configure(&mut self) -> Result<(), String> {
+        self.dpdk_port.configure()
+    }
+    
+    fn start(&mut self) -> Result<(), String> {
+        self.dpdk_port.start()
+    }
+    
+    fn config_rxq(&mut self, queue_id: u16, pool: *mut rte_mempool, socket_id: u32) -> Result<rte_eth_rxconf, String> {
+        self.dpdk_port.config_rxq(queue_id, pool, socket_id)
+    }
+
+    fn config_txq(&mut self, queue_id: u16, socket_id: u32) -> Result<rte_eth_txconf, String> {
+        self.dpdk_port.config_txq(queue_id, socket_id)
+    }
+
+    fn port_id(&self) -> u16 {
+        self.dpdk_port.port_id()
+    }
+
+    fn port_conf(&self) -> &DpdkPortConf {
+        self.dpdk_port.port_conf()
+    }
+}
+
+use rdpdk::port::init::{
+    PciVendor,
+    PciDevice,
+    KNOWN_PORTS,
+};
+use rdpdk::port::raw_port::{PortParams, RawDpdkPort};
+
+const PCI_VENDOR_ID_MLNX: PciVendor = 0x15b3;
+const PCI_DEVICE_ID_MELLANOX_CONNECTX5: PciDevice = 0x1017;
+const PCI_DEVICE_ID_MELLANOX_CONNECTX6: PciDevice = 0x101b;
+const PCI_DEVICE_ID_MELLANOX_CONNECTX6DX: PciDevice = 0x101d;
+const PCI_DEVICE_ID_MELLANOX_CONNECTX7: PciDevice = 0x1021;
+const PCI_DEVICE_ID_MELLANOX_CONNECTX8: PciDevice = 0x1023;
+
+const MLX5_PCI_DEVICES: [PciDevice;5] = [
+    PCI_DEVICE_ID_MELLANOX_CONNECTX5,
+    PCI_DEVICE_ID_MELLANOX_CONNECTX6,
+    PCI_DEVICE_ID_MELLANOX_CONNECTX6DX,
+    PCI_DEVICE_ID_MELLANOX_CONNECTX7,
+    PCI_DEVICE_ID_MELLANOX_CONNECTX8,
+];
+
+
+fn mlx5_init_port(port_id: u16, device: PciDevice, port_params: Arc<PortParams>) -> Result<Box<dyn DpdkPort>, String> {
+    if MLX5_PCI_DEVICES.contains(&device) {
+        println!("mlx5: initializing port {} for  device {:x}", port_id, device);
+        return Ok(Box::new(Mlx5Port::from(port_id, port_params)))
+    }
+    Err(format!("mlx5: Unsupported Mellanox device {:x}", device))
+}
+
+// Add this function to the `.init_array` section
+#[unsafe(no_mangle)]
+#[used]
+#[unsafe(link_section = ".init_array")]
+static REG_PORT_VENDOR: extern "C" fn() = register_port_ops;
+
+extern "C" fn register_port_ops() {
+    println!("Registering Mellanox port driver");
+    KNOWN_PORTS.lock().unwrap().insert(PCI_VENDOR_ID_MLNX, mlx5_init_port);
+}
+
+pub fn mlx5_pol() {
+    println!("mlx5_pol");
 }
