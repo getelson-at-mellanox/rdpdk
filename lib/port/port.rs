@@ -1,3 +1,5 @@
+pub mod raw_port;
+
 use std::ffi::{
     CString
 };

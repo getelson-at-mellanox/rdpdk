@@ -38,7 +38,7 @@ use rdpdk::port::{
     DpdkPortCtrl,
     DpdkPortData,
 };
-use rdpdk::raw_port::RawDpdkPort;
+use rdpdk::port::raw_port::RawDpdkPort;
 use std::sync::Arc;
 use mlx5::Mlx5Port;
 
