@@ -32,6 +32,8 @@ pub struct DpdkPortConf {
     pub txq_num: u16,
     pub tx_desc_num: u16,
     pub rx_desc_num: u16,
+    pub rxq_socket_id: u32,
+    pub txq_socket_id: u32,
     pub rxq_mempool: Option<Arc<DpdkMempool>>,
 }
 
@@ -45,6 +47,8 @@ impl DpdkPortConf {
         txq_num: u16,
         tx_desc_num: u16,
         rx_desc_num: u16,
+        rxq_socket_id: u32,
+        txq_socket_id: u32,
         rxq_mempool: Option<Arc<DpdkMempool>>,
     ) -> Result<Self, String> {
         let mut dev_info:rte_eth_dev_info = unsafe { std::mem::zeroed() };
@@ -61,6 +65,8 @@ impl DpdkPortConf {
             txq_num: txq_num,
             tx_desc_num: tx_desc_num,
             rx_desc_num: rx_desc_num,
+            rxq_socket_id: rxq_socket_id,
+            txq_socket_id: txq_socket_id,
             rxq_mempool: rxq_mempool,
         })
     }
@@ -69,10 +75,9 @@ impl DpdkPortConf {
 pub trait DpdkPort: Send + Sync {
     fn port_id(&self) -> u16;
     fn port_conf(&self) -> &DpdkPortConf;
+
     fn configure(&mut self) -> Result<(), String>;
 
-    fn config_txq(&mut self, queue_id: u16, socket_id:u32) -> Result<rte_eth_txconf, String>;
-    fn config_rxq(&mut self, queue_id: u16, pool: *mut rte_mempool, socket_id:u32) -> Result<rte_eth_rxconf, String>;
     fn start(&mut self) -> Result<(), String>;
 
     fn rx_burst(&mut self, queue_id:u16, pkts: &[*mut rte_mbuf]) -> Result<u16, String>;

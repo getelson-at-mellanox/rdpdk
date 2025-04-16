@@ -14,12 +14,7 @@ use std::ffi::{CStr, CString};
 use std::io::Write;
 use std::os::raw::{c_char, c_int};
 use std::ptr::null_mut;
-use rdpdk::dpdk_raw::rte_ethdev::{
-    rte_eth_dev_count_avail,
-    rte_eth_dev_get_name_by_port,
-    rust_get_port_eth_device,
-    RTE_ETH_NAME_MAX_LEN,
-};
+use rdpdk::dpdk_raw::rte_ethdev::{rte_eth_dev_count_avail, rte_eth_dev_get_name_by_port, rte_eth_dev_socket_id, rust_get_port_eth_device, RTE_ETH_NAME_MAX_LEN};
 use rdpdk::dpdk_raw::rte_mbuf::{rte_mbuf};
 use rdpdk::dpdk_raw::rte_mbuf_core::RTE_MBUF_DEFAULT_BUF_SIZE;
 use std::thread;
@@ -255,7 +250,8 @@ fn init_ports_configuration(_args: &Vec<String>, port_num: u16) -> Vec::<DpdkPor
     let mbuf_pool = Arc::new(mbuf_pool);
 
     for port_id in 0..port_num {
-        port_conf[port_id as usize] = DpdkPortConf::new_from(
+        let socket_id = unsafe { rte_eth_dev_socket_id(port_id) } as u32;
+        let pc = DpdkPortConf::new_from(
             port_id,
             unsafe { std::mem::zeroed() },
             unsafe { std::mem::zeroed() },
@@ -264,8 +260,11 @@ fn init_ports_configuration(_args: &Vec<String>, port_num: u16) -> Vec::<DpdkPor
             1,
             64,
             64,
+            socket_id,
+            socket_id,
             Some(mbuf_pool.clone())
         ).unwrap();
+        port_conf.insert(port_id as usize, pc);
     }
 
     port_conf

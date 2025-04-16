@@ -6,14 +6,12 @@ use crate::dpdk_raw::rte_ethdev::{
     rte_eth_conf,
     rte_eth_txconf,
     rte_eth_rxconf,
-    rte_mempool,
     rte_eth_rss_conf,
     rte_eth_dev_start,
     rte_eth_dev_configure,
     rte_eth_tx_queue_setup,
     rte_eth_rx_queue_setup,
     rust_get_port_fp_ops,
-    rte_eth_dev_socket_id,
     RTE_MAX_QUEUES_PER_PORT,
     RTE_ETH_RSS_IP,
     rte_eth_rx_mq_mode_RTE_ETH_MQ_RX_VMDQ_DCB_RSS,
@@ -69,18 +67,7 @@ impl RawDpdkPort {
             raw_fp_ops: Some(raw_fp_ops),
         };
 
-        let socket_id = unsafe { rte_eth_dev_socket_id(port_id) } as u32;
         let _ = dpdk_port.configure();
-        let _ = dpdk_port.config_txq(0, socket_id);
-        let _ = dpdk_port.config_rxq(
-            0,
-            dpdk_port
-                .port_conf
-                .rxq_mempool
-                .as_ref()
-                .unwrap()
-                .pool as _,
-            socket_id);
         let _ = dpdk_port.start();
 
         Ok(dpdk_port)
@@ -102,42 +89,36 @@ impl DpdkPort for RawDpdkPort {
             self.port_conf.rxq_num,
             self.port_conf.txq_num,
             &self.port_conf.dev_conf as *const rte_eth_conf)};
+
+        for queue_id in 0..self.port_conf.rxq_num {
+            let _ = unsafe {
+                rte_eth_tx_queue_setup(
+                    self.port_id,
+                    queue_id,
+                    self.port_conf.tx_desc_num,
+                    self.port_conf.txq_socket_id,
+                    &self.port_conf.tx_conf as *const _ as *mut _
+            )};
+        }
+
+        self.port_conf.rx_conf.offloads = 0;
+        for queue_id in 0..self.port_conf.rxq_num {
+            let _ = unsafe {
+                rte_eth_rx_queue_setup(
+                    self.port_id,
+                    queue_id,
+                    self.port_conf.rx_desc_num,
+                    self.port_conf.rxq_socket_id,
+                    &self.port_conf.rx_conf as *const _ as *mut _,
+                    self.port_conf.rxq_mempool.as_ref().unwrap().pool as *mut _
+            )};
+        }
         Ok(())
     }
 
     fn start(&mut self) -> Result<(), String> {
         unsafe {rte_eth_dev_start(self.port_id)};
         Ok(())
-    }
-
-    fn config_txq(&mut self, queue_id:u16, socket_id: u32) -> Result<rte_eth_txconf, String> {
-        let tx_conf: rte_eth_txconf = unsafe { std::mem::zeroed() };
-
-        let _ = unsafe {rte_eth_tx_queue_setup(
-            self.port_id,
-            queue_id,
-            self.port_conf.tx_desc_num,
-            socket_id,
-            &tx_conf as *const _ as *mut _
-        )};
-
-        Ok(tx_conf)
-    }
-
-    fn config_rxq(&mut self, queue_id:u16, pool: *mut rte_mempool, socket_id:u32) -> Result<rte_eth_rxconf, String> {
-        let mut rxq_conf: rte_eth_rxconf = self.port_conf.dev_info.default_rxconf.clone();
-        rxq_conf.offloads = 0;
-
-        let _ = unsafe{rte_eth_rx_queue_setup(
-            self.port_id,
-            queue_id,
-            self.port_conf.rx_desc_num,
-            socket_id,
-            &rxq_conf as *const _ as *mut _,
-            pool
-        )};
-
-        Ok(rxq_conf)
     }
 
     fn rx_burst(&mut self, queue_id:u16, pkts: &[*mut rte_mbuf]) -> Result<u16, String> {
