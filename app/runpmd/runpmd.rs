@@ -22,11 +22,10 @@ use rdpdk::dpdk_raw::rte_ethdev::{
 };
 use rdpdk::dpdk_raw::rte_mbuf::{rte_mbuf};
 use rdpdk::dpdk_raw::rte_mbuf_core::RTE_MBUF_DEFAULT_BUF_SIZE;
-use rdpdk::dpdk_raw::rte_mempool::rte_mempool;
 use std::thread;
 
-use rdpdk::port::{alloc_mbuf_pool, DpdkPort};
-use rdpdk::port::raw_port::{PortParams, RawDpdkPort};
+use rdpdk::port::{alloc_mbuf_pool, DpdkPort, DpdkPortConf};
+use rdpdk::port::raw_port::{RawDpdkPort};
 use std::sync::Arc;
 
 use rdpdk::port::init::{
@@ -224,40 +223,52 @@ fn query_port_businfo(port_id: u16) -> (PciVendor, PciDevice) {
 
 }
 
-fn start_port(port_id: u16, port_params: Arc<PortParams>) -> Result<Box<dyn DpdkPort>, String>
+fn start_port(port_id: u16, port_conf: &DpdkPortConf) -> Result<Box<dyn DpdkPort>, String>
 {
-
     let (vendor, device) = query_port_businfo(port_id);
 
     for (v, func) in KNOWN_PORTS.lock().unwrap().iter() {
         if vendor != *v { continue }
-            match func(port_id, device, port_params.clone()) {
+            match func(port_id, device, port_conf) {
                 Ok(port) => { return Ok(port); },
                 Err(_e) => { continue; }
             }
     }
     println!("port {port_id}: fallback to raw port");
-    Ok(Box::new(RawDpdkPort::init(port_id, port_params).unwrap()))
+    Ok(Box::new(RawDpdkPort::init(port_id, port_conf).unwrap()))
 }
 
 
 
-fn set_port_params(_args: &Vec<String>) -> PortParams {
+fn init_ports_configuration(_args: &Vec<String>, port_num: u16) -> Vec::<DpdkPortConf> {
+    let mut port_conf =
+        Vec::<DpdkPortConf>::with_capacity(port_num as usize);
 
-    let mbuf_pool: *mut rte_mempool = alloc_mbuf_pool(
+    let mbuf_pool = alloc_mbuf_pool(
         "runpmd_default_mbuf_pool",
         1024,
         0,
         0,
         RTE_MBUF_DEFAULT_BUF_SIZE as u16,
         0,
-    ).unwrap() as *mut rte_mempool;
+    ).unwrap() ;
+    let mbuf_pool = Arc::new(mbuf_pool);
 
-    PortParams {
-        rxq_num: 1,
-        _txq_num: 1,
-        rxq_mbuf_pool: mbuf_pool,
+    for port_id in 0..port_num {
+        port_conf[port_id as usize] = DpdkPortConf::new_from(
+            port_id,
+            unsafe { std::mem::zeroed() },
+            unsafe { std::mem::zeroed() },
+            unsafe { std::mem::zeroed() },
+            1,
+            1,
+            64,
+            64,
+            Some(mbuf_pool.clone())
+        ).unwrap();
     }
+
+    port_conf
 }
 
 fn main() {
@@ -271,11 +282,11 @@ fn main() {
         }
     };
 
-    let port_params = Arc::new(set_port_params(&app_params));
+    let port_conf = Arc::new(init_ports_configuration(&app_params, port_num));
 
-    let mut ports: Vec<Box<dyn DpdkPort>> = Vec::new();
+    let mut ports: Vec<Box<dyn DpdkPort>> = Vec::with_capacity(port_num as usize);
     for port_id in 0..port_num {
-        match start_port(port_id, port_params.clone()) {
+        match start_port(port_id, &port_conf[port_id as usize]) {
             Ok(p) => ports.push(p),
             Err(e) => {
                 println!("{e}");
@@ -295,8 +306,8 @@ fn main() {
     });
 
     cli_thread.join().unwrap();
-    /// without direct reference to the mlx5 port linker does not include it
-    /// in the build.
+
+    // without direct reference to the mlx5 port linker does not include it in a build.
     mlx5::mlx5_pol(); // TODO: remove
 }
 

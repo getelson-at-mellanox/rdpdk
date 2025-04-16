@@ -4,6 +4,7 @@ pub mod init;
 use std::ffi::{
     CString
 };
+use std::sync::Arc;
 use crate::dpdk_raw::rte_mbuf::{
     rte_pktmbuf_pool_create,
     rte_mbuf,
@@ -21,6 +22,7 @@ use crate::dpdk_raw::rte_ethdev::{
 unsafe impl Send for DpdkPortConf {}
 unsafe impl Sync for DpdkPortConf {}
 
+#[derive(Clone)]
 pub struct DpdkPortConf {
     pub dev_info: rte_eth_dev_info,
     pub dev_conf: rte_eth_conf,
@@ -30,6 +32,7 @@ pub struct DpdkPortConf {
     pub txq_num: u16,
     pub tx_desc_num: u16,
     pub rx_desc_num: u16,
+    pub rxq_mempool: Option<Arc<DpdkMempool>>,
 }
 
 impl DpdkPortConf {
@@ -42,6 +45,7 @@ impl DpdkPortConf {
         txq_num: u16,
         tx_desc_num: u16,
         rx_desc_num: u16,
+        rxq_mempool: Option<Arc<DpdkMempool>>,
     ) -> Result<Self, String> {
         let mut dev_info:rte_eth_dev_info = unsafe { std::mem::zeroed() };
         let _ = unsafe {
@@ -57,6 +61,7 @@ impl DpdkPortConf {
             txq_num: txq_num,
             tx_desc_num: tx_desc_num,
             rx_desc_num: rx_desc_num,
+            rxq_mempool: rxq_mempool,
         })
     }
 }
@@ -78,13 +83,17 @@ pub trait DpdkFlow : DpdkPort {}
 
 pub trait DpdkTmplFlow : DpdkPort {}
 
+pub struct DpdkMempool {
+    pub pool: *mut rte_mempool,
+}
+
 pub fn alloc_mbuf_pool(
     name: &str,
     capacity: u32,
     cache_size: u32,
     priv_size: u16,
     data_root_size: u16,
-    socket: i32) -> Result<*mut rte_mempool, String> {
+    socket: i32) -> Result<DpdkMempool, String> {
     let pool_name = CString::new(name.to_string()).unwrap();
     let pool= unsafe {rte_pktmbuf_pool_create(
         pool_name.as_ptr(),
@@ -94,6 +103,5 @@ pub fn alloc_mbuf_pool(
         data_root_size,
         socket as _
     )};
-    Ok(pool as *mut _)
+    Ok(DpdkMempool {pool: pool as *mut _})
 }
-

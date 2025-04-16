@@ -1,5 +1,4 @@
 use std::os::raw::c_void;
-use std::sync::Arc;
 use rdpdk::dpdk_raw::ethdev_driver::{rte_eth_dev};
 use rdpdk::dpdk_raw::rte_ethdev::{rte_eth_rxconf, rte_eth_txconf, rte_mempool, rust_get_port_eth_device};
 use rdpdk::port::{DpdkPort, DpdkPortConf};
@@ -28,9 +27,9 @@ pub struct Mlx5Port {
 }
 
 impl Mlx5Port {
-    pub fn from(port_id: u16, port_params: Arc<PortParams>) -> Self {
+    pub fn from(port_id: u16, port_conf: &DpdkPortConf) -> Self {
 
-        let dpdk_port = RawDpdkPort::init(port_id, port_params).unwrap();
+        let dpdk_port = RawDpdkPort::init(port_id, port_conf).unwrap();
 
         let dev: *mut rdpdk::dpdk_raw::ethdev_driver::rte_eth_dev = unsafe {
             rust_get_port_eth_device(port_id) as *mut rte_eth_dev
@@ -143,7 +142,7 @@ use rdpdk::port::init::{
     PciDevice,
     KNOWN_PORTS,
 };
-use rdpdk::port::raw_port::{PortParams, RawDpdkPort};
+use rdpdk::port::raw_port::{RawDpdkPort};
 
 const PCI_VENDOR_ID_MLNX: PciVendor = 0x15b3;
 const PCI_DEVICE_ID_MELLANOX_CONNECTX5: PciDevice = 0x1017;
@@ -161,10 +160,10 @@ const MLX5_PCI_DEVICES: [PciDevice;5] = [
 ];
 
 
-fn mlx5_init_port(port_id: u16, device: PciDevice, port_params: Arc<PortParams>) -> Result<Box<dyn DpdkPort>, String> {
+fn mlx5_init_port(port_id: u16, device: PciDevice, port_conf: &DpdkPortConf) -> Result<Box<dyn DpdkPort>, String> {
     if MLX5_PCI_DEVICES.contains(&device) {
         println!("mlx5: initializing port {} for  device {:x}", port_id, device);
-        return Ok(Box::new(Mlx5Port::from(port_id, port_params)))
+        return Ok(Box::new(Mlx5Port::from(port_id, port_conf)))
     }
     Err(format!("mlx5: Unsupported Mellanox device {:x}", device))
 }
