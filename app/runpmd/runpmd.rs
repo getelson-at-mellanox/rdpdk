@@ -17,7 +17,7 @@ use std::thread;
 
 use rdpdk::port::{alloc_mbuf_pool, DpdkPort, DpdkPortConf};
 use rdpdk::port::raw_port::{RawDpdkPort};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use rdpdk::port::init::{
     PciVendor,
@@ -137,10 +137,12 @@ fn l2_addr_swap(mbuf: &mut rte_mbuf)
     }
 }
 
-fn do_io(ports:&mut Vec<Box<dyn DpdkPort>>) {
-    for port in &mut *ports {
+fn do_io(runpmd: Arc<RunPmd>) {
+    for pretected in runpmd.ports.iter() {
         let rx_pkts:[*mut rte_mbuf; 64] = [null_mut(); 64];
-            let rx_burst_res = port.rx_burst(port.port_id(), &rx_pkts);
+        let mut port = pretected.lock().unwrap();
+        let port_id = port.port_id();
+        let rx_burst_res = port.rx_burst(port_id, &rx_pkts);
 
             match rx_burst_res {
                 Err(err) => println!("{err}"),
@@ -151,15 +153,15 @@ fn do_io(ports:&mut Vec<Box<dyn DpdkPort>>) {
                             show_packet(&unsafe { *(rx_pkts[i as usize] as *const rte_mbuf) });
                             l2_addr_swap(&mut unsafe { *(rx_pkts[i as usize] as *mut rte_mbuf) });
 
-                            let _ = port.tx_burst(port.port_id(), tx_pool);
+                            let _ = port.tx_burst(port_id, tx_pool);
                         }
                         continue;
                     }
                 }
             }
     }
-
 }
+
 fn run_interactive(modules: &CmdModule) {
     loop {
         let input = read_input().unwrap();
@@ -267,6 +269,12 @@ fn init_ports_configuration(_args: &Vec<String>, port_num: u16) -> Vec::<DpdkPor
     port_conf
 }
 
+struct RunPmd {
+    ports: Vec<Mutex<Box<dyn DpdkPort>>>    
+}
+unsafe impl Send for RunPmd {}
+unsafe impl Sync for RunPmd {}
+
 fn main() {
     let (eal_params, app_params) = separate_cmd_line();
 
@@ -280,10 +288,10 @@ fn main() {
 
     let port_conf = Arc::new(init_ports_configuration(&app_params, port_num));
 
-    let mut ports: Vec<Box<dyn DpdkPort>> = Vec::with_capacity(port_num as usize);
+    let mut ports: Vec<Mutex<Box<dyn DpdkPort>>> = Vec::with_capacity(port_num as usize);
     for port_id in 0..port_num {
         match start_port(port_id, &port_conf[port_id as usize]) {
-            Ok(p) => ports.push(p),
+            Ok(p) => ports.push(Mutex::new(p)),
             Err(e) => {
                 println!("{e}");
                 std::process::exit(255);
@@ -291,9 +299,14 @@ fn main() {
         }
     }
     show_ports_summary(&ports);
+    
+    let runpmd = Arc::new(RunPmd {
+        ports: ports
+    });
+    
 
     let _ = thread::spawn(move || {
-        loop { do_io(&mut ports); }
+        loop { do_io(runpmd.clone()); }
     });
 
     let cli_thread = thread::spawn(move || {
@@ -307,21 +320,26 @@ fn main() {
     mlx5::mlx5_pol(); // TODO: remove
 }
 
-pub fn show_ports_summary(ports: &Vec<Box<dyn DpdkPort>>) {
+pub fn show_ports_summary(ports: &Vec<Mutex<Box<dyn DpdkPort>>>) {
     let mut name_buf: [c_char; RTE_ETH_NAME_MAX_LEN as usize] =
         [0 as c_char; RTE_ETH_NAME_MAX_LEN as usize];
     let title = format!("{:<4}    {:<32} {:<14}", "Port", "Name", "Driver");
     println!("{title}");
     ports.iter().for_each(|p| unsafe {
-        let _rc = rte_eth_dev_get_name_by_port(p.port_id(), name_buf.as_mut_ptr());
-        let name = CStr::from_ptr(name_buf.as_ptr());
-        let drv = CStr::from_ptr(p.port_conf().dev_info.driver_name);
-        let summary = format!(
-            "{:<4}    {:<32} {:<14}",
-            p.port_id(),
-            name.to_str().unwrap(),
-            drv.to_str().unwrap()
-        );
+
+        let summary = {
+            let port = p.lock().unwrap();
+
+            let _rc = rte_eth_dev_get_name_by_port(port.port_id(), name_buf.as_mut_ptr());
+            let name = CStr::from_ptr(name_buf.as_ptr());
+            let drv = CStr::from_ptr(port.port_conf().dev_info.driver_name);
+            format!(
+                "{:<4}    {:<32} {:<14}",
+                port.port_id(),
+                name.to_str().unwrap(),
+                drv.to_str().unwrap()
+            )
+        };
         println!("{summary}");
     });
 }
