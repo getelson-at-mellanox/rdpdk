@@ -6,7 +6,7 @@ use rdpdk::cmdline::arg::Arg;
 use rdpdk::cmdline::arg::arg_int::ArgInt;
 use rdpdk::cmdline::arg::arg_net::Ipv4AddrArg;
 use rdpdk::cmdline::param::Param;
-use crate::flow::items::{FlowItems, Item};
+use crate::cmd_module::flow::items::{FlowItems, Item};
 
 pub(super) fn flow_item_create_ipv4(items_db: &mut FlowItems) {
     let src_arg: Box<dyn Arg> = Box::new(Ipv4AddrArg::new());

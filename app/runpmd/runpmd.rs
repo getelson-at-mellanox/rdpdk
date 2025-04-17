@@ -1,12 +1,8 @@
-#[path = "cmdline_utils/flow/flow.rs"]
-pub mod flow;
+#[path = "cmd_module/cmd_module.rs"]
+pub mod cmd_module;
 
-#[path = "cmdline_utils/port/port.rs"]
-pub mod port;
-
-use flow::FlowCmd;
-use port::PortModule;
-use rdpdk::cmdline::ModuleOps;
+use cmd_module::flow::FlowCmd;
+use cmd_module::port::PortModule;
 use rdpdk::dpdk_raw::rte_eal::{rte_eal_cleanup, rte_eal_init};
 use std::collections::HashMap;
 use std::{env, slice};
@@ -28,6 +24,7 @@ use rdpdk::port::init::{
     PciDevice,
     KNOWN_PORTS,
 };
+use crate::cmd_module::CmdModuleOps;
 
 fn read_input() -> Result<String, String> {
     let mut buffer = String::new();
@@ -180,7 +177,7 @@ fn run_interactive(modules: &CmdModule) {
     println!("Live long and prosper");
 }
 
-type CmdModule = HashMap<String, Box<dyn ModuleOps>>;
+type CmdModule = HashMap<String, Box<dyn CmdModuleOps>>;
 fn register_cmd_modules() -> CmdModule {
     let mut modules = CmdModule::new();
     modules.insert("flow".to_string(), Box::new(FlowCmd::new()));

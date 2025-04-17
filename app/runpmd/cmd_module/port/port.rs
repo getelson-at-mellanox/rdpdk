@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use rdpdk::dpdk_raw::rte_ethdev::{rte_eth_promiscuous_disable, rte_eth_promiscuous_enable};
 use rdpdk::cmdline::arg::*;
 use rdpdk::cmdline::arg::arg_int::ArgInt;
-use rdpdk::cmdline::{ModuleOps};
+use crate::cmd_module::CmdModuleOps;
 
 // port [set|show] [all | <port ID>] <command>
 pub struct PortArg;
@@ -56,7 +56,7 @@ pub struct PortModule {
 unsafe impl Send for PortModule {}
 unsafe impl Sync for PortModule {}
 
-impl ModuleOps for PortModule {
+impl CmdModuleOps for PortModule {
 
     fn parse_cmd(&self, input: &mut Vec<String>) {
         input.remove(0); // port

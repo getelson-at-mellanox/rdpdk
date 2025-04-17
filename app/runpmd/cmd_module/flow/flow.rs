@@ -9,11 +9,11 @@ pub mod items;
 use actions::FlowActions;
 use attr::FlowAttributes;
 use items::FlowItems;
-use rdpdk::cmdline::ModuleOps;
 use rdpdk::dpdk_raw::rte_ethdev::{rte_flow_create, rte_flow_error};
 use std::collections::HashMap;
 use std::mem;
 use std::str::FromStr;
+use crate::cmd_module::CmdModuleOps;
 
 type CmdMap = HashMap<String, Box<dyn CmdOps>>;
 
@@ -34,7 +34,7 @@ impl FlowCmd {
     }
 }
 
-impl ModuleOps for FlowCmd {
+impl CmdModuleOps for FlowCmd {
     fn parse_cmd(&self, input: &mut Vec<String>) {
         input.remove(0); // flow
         loop {

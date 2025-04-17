@@ -8,7 +8,7 @@ use rdpdk::cmdline::arg::Arg;
 use rdpdk::cmdline::arg::arg_int::{ArgInt, ByteOrder};
 use rdpdk::cmdline::arg::arg_net::EthAddrArg;
 use rdpdk::cmdline::param::Param;
-use crate::flow::items::{FlowItems, Item};
+use crate::cmd_module::flow::items::{FlowItems, Item};
 
 
 pub(super) fn flow_item_create_eth(items_db: &mut FlowItems) {
