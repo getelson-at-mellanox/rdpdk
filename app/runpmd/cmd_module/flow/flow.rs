@@ -15,7 +15,24 @@ use std::mem;
 use std::str::FromStr;
 use crate::cmd_module::CmdModuleOps;
 
-type CmdMap = HashMap<String, Box<dyn CmdOps>>;
+//           ┌──────────────────────────────────┐
+//           │                                  │
+//           │  FlowCmd  ( impl CmdModuleOps )  │
+//           │                                  │
+//           └──────────────┬───────────────────┘
+//                          │
+//                          │   dyn FlowCmdOps
+//                          ▼
+//           ┌───────────────────────────────────────────┐
+//           │ ┌────────────────┐ ┌───────────────┐      │
+//           │ │                │ │               │      │
+//           │ │ FlowCreateCmd  │ │FlowRemoveCmd  │      │
+//           │ │                │ │               │      │
+//           │ └────────────────┘ └───────────────┘      │
+//           └───────────────────────────────────────────┘
+//
+
+type CmdMap = HashMap<String, Box<dyn FlowCmdOps>>;
 
 pub struct FlowCmd {
     commands: CmdMap,
@@ -29,7 +46,7 @@ impl FlowCmd {
         let mut map = FlowCmd {
             commands: CmdMap::new(),
         };
-        map.commands.insert("create".to_string(), CreateCmd::new());
+        map.commands.insert("create".to_string(), FlowCreateCmd::new());
         map
     }
 }
@@ -49,14 +66,14 @@ impl CmdModuleOps for FlowCmd {
     }
 }
 
-struct CreateCmd;
-impl CreateCmd {
-    pub fn new() -> Box<dyn CmdOps> {
-        Box::new(CreateCmd)
+struct FlowCreateCmd;
+impl FlowCreateCmd {
+    pub fn new() -> Box<dyn FlowCmdOps> {
+        Box::new(FlowCreateCmd)
     }
 }
 
-impl CmdOps for CreateCmd {
+impl FlowCmdOps for FlowCreateCmd {
     fn name(&self) -> &str {
         "create"
     }
@@ -99,7 +116,7 @@ impl CmdOps for CreateCmd {
     }
 }
 
-pub trait CmdOps: Send + Sync {
+pub trait FlowCmdOps: Send + Sync {
     fn name(&self) -> &str;
 
     fn parse(&self, input: &mut Vec<String>);
