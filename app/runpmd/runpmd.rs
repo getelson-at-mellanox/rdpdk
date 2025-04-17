@@ -107,6 +107,29 @@ fn run_command(modules: &CmdModule, command: &str) {
     }
 }
 
+#[derive(Copy, Clone)]
+struct MbufPtr(*const rte_mbuf);
+
+impl std::fmt::Debug for MbufPtr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.0.is_null() {
+            return write!(f, "MbufPtr(null)");
+        }
+
+        // Safety: We've checked that the pointer is not null
+        let mbuf = unsafe { &*self.0 };
+
+        let data_off = unsafe { mbuf.__bindgen_anon_1.__bindgen_anon_1.data_off };
+        let pkt_len = unsafe { mbuf.__bindgen_anon_2.__bindgen_anon_1.pkt_len };
+
+        write!(f,
+            "MbufPtr {{ address: {:p}, data_offset: {}, packet_length: {} }}",
+            self.0,
+            data_off,
+            pkt_len
+        )
+    }
+}
 fn show_packet(mbuf: &rte_mbuf) {
 
     let data_off = unsafe {mbuf.__bindgen_anon_1.__bindgen_anon_1.data_off};
@@ -151,6 +174,9 @@ fn do_io(runpmd: Arc<RunPmd>) {
                     if rx_num > 0 {
                         for i in 0..rx_num {
                             show_packet(&unsafe { *(rx_pkts[i as usize] as *const rte_mbuf) });
+                            let mbuf_ptr: *const rte_mbuf = rx_pkts[i as usize] as *const rte_mbuf;
+                            println!("{:?}", MbufPtr(mbuf_ptr));
+
                             l2_addr_swap(&mut unsafe { *(rx_pkts[i as usize] as *mut rte_mbuf) });
 
                             let _ = port.tx_burst(port_id, tx_pool);
