@@ -1,0 +1,31 @@
+#! /bin/sh
+
+# Required environment variables:
+# DPDK_SOURCE_ROOT - DPDK sources base directory
+# DPDK_BUILD_ROOT - DPDK build directory
+
+if test "x$dbg" != 'x'; then
+  set -x
+fi
+
+if test "x$DPDK_SOURCE_ROOT" = 'x'; then
+  echo "DPDK_SOURCE_ROOT was not defined"
+  exit 255
+fi
+
+if test "x$DPDK_BUILD_ROOT" = 'x'; then
+  echo "DPDK_BUILD_ROOT was not defined"
+  exit 255
+fi
+
+base='rte_build_config'
+input="$DPDK_BUILD_ROOT/${base}.h"
+
+bindgen_opt="--wrap-unsafe-ops --no-layout-tests \
+  --no-derive-debug \
+  --blocklist-var  RTE_EAL_PMD_PATH  \
+"
+
+bindgen_clang_opt='-Wno-unused-command-line-argument'
+
+bindgen $bindgen_opt --output "$out_dir/$base.rs" "$input" -- $bindgen_clang_opt

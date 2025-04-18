@@ -1,0 +1,50 @@
+#! /bin/sh
+
+# Required environment variables:
+# DPDK_SOURCE_ROOT - DPDK sources base directory
+# DPDK_BUILD_ROOT - DPDK build directory
+
+if test "x$dbg" != 'x'; then
+  set -x
+fi
+
+if test "x$DPDK_SOURCE_ROOT" = 'x'; then
+  echo "DPDK_SOURCE_ROOT was not defined"
+  exit 255
+fi
+
+if test "x$DPDK_BUILD_ROOT" = 'x'; then
+  echo "DPDK_BUILD_ROOT was not defined"
+  exit 255
+fi
+
+base='rte_mempool'
+input_dir="$DPDK_SOURCE_ROOT/lib/mempool"
+
+bindgen_opt="--wrap-unsafe-ops --no-layout-tests \
+  --no-derive-debug \
+  --blocklist-var  RTE_EAL_PMD_PATH  \
+  --blocklist-function q.cvt.* \
+  --blocklist-function strtold \
+  --blocklist-function rte_mp_.* \
+  --blocklist-function rte_lcore_.* \
+"
+
+bindgen_clang_opt="-Wno-unused-command-line-argument \
+  -I${DPDK_SOURCE_ROOT}/config \
+  -I${DPDK_SOURCE_ROOT}/build \
+  -I${DPDK_SOURCE_ROOT}/lib/eal/include \
+  -I${DPDK_SOURCE_ROOT}/lib/log \
+  -I${DPDK_SOURCE_ROOT}/lib/net \
+  -I${DPDK_SOURCE_ROOT}/lib/mbuf \
+  -I${DPDK_SOURCE_ROOT}/lib/mempool \
+  -I${DPDK_SOURCE_ROOT}/lib/ring \
+  -I${DPDK_SOURCE_ROOT}/lib/meter \
+  -I${DPDK_SOURCE_ROOT}/lib/ethdev \
+  -I${DPDK_SOURCE_ROOT}/lib/eal/linux/include \
+  -I${DPDK_SOURCE_ROOT}/lib/eal/x86/include \
+"
+
+bindgen $bindgen_opt \
+  --output "$out_dir/$base.rs" \
+  "${input_dir}/${base}.h" -- $bindgen_clang_opt
