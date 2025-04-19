@@ -16,4 +16,8 @@ members = [
 
 [dependencies]
 
+[[example]]
+name = "echo"
+crate-type = ["bin"]
+
 

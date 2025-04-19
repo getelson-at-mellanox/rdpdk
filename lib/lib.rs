@@ -6,11 +6,19 @@ use crate::lib::dpdk_raw::rte_mempool::{rte_mempool};
 #[path = "dpdk_raw/dpdk_raw.rs"]
 pub mod dpdk_raw;
 
+#[path = "eal/eal.rs"]
+pub mod eal;
+
+#[path = "port/port.rs"]
+pub mod port;
+
 #[derive(Clone)]
-pub struct MBuffMempool {
-    pool_ptr: *mut rte_mempool
+pub struct ThreadBoundMempool {
+    pool_ptr: *mut rte_mempool,
+    _guard: std::marker::PhantomData<std::rc::Rc<()>>,
 }
 
+#[derive(Clone)]
 pub struct MBuffMempoolHandle {
     name: String,
     capacity: u32,
@@ -32,7 +40,7 @@ impl MBuffMempoolHandle {
         }
     }
     
-    pub fn mempool_create(&mut self) -> Result<MBuffMempool, String>{
+    pub fn mempool_create(&mut self) -> Result<ThreadBoundMempool, String>{
         let mut pool_ptr = unsafe {
             rte_pktmbuf_pool_create(
                 CString::new(self.name.as_str()).unwrap().as_ptr(),
@@ -44,7 +52,10 @@ impl MBuffMempoolHandle {
             )};
 
         if pool_ptr != std::ptr::null_mut() {
-            Ok((MBuffMempool {pool_ptr: pool_ptr as _}))
+            Ok((ThreadBoundMempool {
+                pool_ptr: pool_ptr as _,
+                _guard: std::marker::PhantomData
+            }))
         } else {
             Err(String::from("Failed to create mempool"))
         }
@@ -68,7 +79,16 @@ impl MBuffMempoolHandle {
     }
 }
 
-impl std::fmt::Debug for MBuffMempool {
+impl std::fmt::Debug for MBuffMempoolHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f,
+            "Mempool {} capacity: {} ",
+            self.name,
+            self.capacity)
+    } 
+}
+
+impl std::fmt::Debug for ThreadBoundMempool {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mpool = unsafe { &*(self.pool_ptr) };
         unsafe {
