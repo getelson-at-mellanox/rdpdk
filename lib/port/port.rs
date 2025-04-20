@@ -249,6 +249,7 @@ impl Rxq {
         }
     }
 
+    #[inline(always)]
     pub fn rx_burst(&mut self, mbufs: &[*mut rte_mbuf]) -> u16 {
 
         let num = unsafe {
@@ -275,6 +276,7 @@ impl Txq {
         }
     }
 
+    #[inline(always)]
     pub fn tx_burst(&mut self, mbufs: &[*mut rte_mbuf]) -> u16 {
         let num = unsafe {
             let (burst_fn, qdesc) = self.tx_burst.unwrap();
