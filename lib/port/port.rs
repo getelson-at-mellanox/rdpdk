@@ -22,6 +22,50 @@ use crate::lib::dpdk_raw::rte_ethdev::{
 };
 use crate::lib::dpdk_raw::rte_mbuf::rte_mbuf;
 
+#[derive(Clone)]
+pub(crate) struct DpdkEthRxConf {
+    rx_conf: rte_eth_rxconf,
+}
+
+unsafe impl Send for DpdkEthRxConf {}
+unsafe impl Sync for DpdkEthRxConf {}
+
+impl DpdkEthRxConf {
+    pub(crate) fn new() -> Self {
+        DpdkEthRxConf {
+            rx_conf: unsafe { std::mem::zeroed() },
+        }
+    }
+}
+
+impl std::fmt::Debug for DpdkEthRxConf {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "eth_rx_conf: {{ todo }}")
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct DpdkEthTxConf {
+    tx_conf: rte_eth_txconf,
+}
+
+unsafe impl Send for DpdkEthTxConf {}
+unsafe impl Sync for DpdkEthTxConf {}
+
+impl DpdkEthTxConf {
+    pub(crate) fn new() -> Self {
+        DpdkEthTxConf {
+            tx_conf: unsafe { std::mem::zeroed() },
+        }
+    }
+}
+
+impl std::fmt::Debug for DpdkEthTxConf {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "eth_tx_conf: {{ todo }}")
+    }
+}
+
 #[derive(Debug, Clone)]
 #[allow(unused)]
 pub(crate) struct PortHandle {
@@ -30,6 +74,8 @@ pub(crate) struct PortHandle {
     rss_hash_key: Option<String>,
     rss_hf: u64, // see rte_ethdev::RTE_ETH_RSS_*
     rss_hfa: rte_eth_hash_function,
+    _rx_conf: DpdkEthRxConf,
+    _tx_conf: DpdkEthTxConf,
     refcnt: Arc<()>
 }
 
@@ -65,7 +111,8 @@ impl PortHandle {
             rss_hash_key: None,
             rss_hf: 0,
             rss_hfa: rte_eth_hash_function_RTE_ETH_HASH_FUNCTION_DEFAULT,
-            // tx_conf: unsafe { std::mem::zeroed() },
+            _rx_conf: DpdkEthRxConf::new(),
+            _tx_conf: DpdkEthTxConf::new(),
             refcnt: Arc::new(())
         }
     }
