@@ -13,10 +13,12 @@ pub mod eal;
 pub mod port;
 
 #[derive(Clone)]
-pub struct ThreadBoundMempool {
+pub struct DpdkMempool {
     pool_ptr: *mut rte_mempool,
-    _guard: std::marker::PhantomData<std::rc::Rc<()>>,
 }
+
+unsafe impl Send for DpdkMempool {}
+unsafe impl Sync for DpdkMempool {}
 
 #[derive(Clone)]
 pub struct MBuffMempoolHandle {
@@ -40,7 +42,7 @@ impl MBuffMempoolHandle {
         }
     }
     
-    pub fn mempool_create(&mut self) -> Result<ThreadBoundMempool, String>{
+    pub fn mempool_create(&mut self) -> Result<DpdkMempool, String>{
         let pool_ptr = unsafe {
             rte_pktmbuf_pool_create(
                 CString::new(self.name.as_str()).unwrap().as_ptr(),
@@ -52,9 +54,8 @@ impl MBuffMempoolHandle {
             )};
 
         if pool_ptr != std::ptr::null_mut() {
-            Ok(ThreadBoundMempool {
+            Ok(DpdkMempool {
                 pool_ptr: pool_ptr as _,
-                _guard: std::marker::PhantomData
             })
         } else {
             Err(String::from("Failed to create mempool"))
@@ -88,7 +89,7 @@ impl std::fmt::Debug for MBuffMempoolHandle {
     } 
 }
 
-impl std::fmt::Debug for ThreadBoundMempool {
+impl std::fmt::Debug for DpdkMempool {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mpool = unsafe { &*(self.pool_ptr) };
         unsafe {

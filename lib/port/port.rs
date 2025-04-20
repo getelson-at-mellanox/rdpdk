@@ -1,7 +1,7 @@
 use std::ffi::c_void;
 use std::ptr::null_mut;
 use std::sync::Arc;
-use crate::lib::{MBuffMempoolHandle, NumaSocketId};
+use crate::lib::{DpdkMempool, MBuffMempoolHandle, NumaSocketId};
 use crate::lib::dpdk_raw::rte_ethdev::{
     rte_eth_rss_conf,
     rte_eth_conf,
@@ -168,7 +168,7 @@ pub struct RxqHandle {
     port_id: u16,
     queue_id: u16,
     desc_num: u16,
-    mempool_handle: MBuffMempoolHandle,
+    mempool: DpdkMempool,
 }
 
 impl RxqHandle {
@@ -177,13 +177,13 @@ impl RxqHandle {
         port_id: u16,
         queue_id: u16,
         desc_num: u16,
-        mempool_handle: MBuffMempoolHandle) -> Self {
+        mempool: DpdkMempool) -> Self {
         RxqHandle {
             _handle: handle,
             port_id: port_id,
             queue_id: queue_id,
             desc_num: desc_num,
-            mempool_handle: mempool_handle
+            mempool: mempool
         }
     }
 
@@ -195,7 +195,6 @@ impl RxqHandle {
     // It returns an Rxq instance, which has the PhantomData to encode the threading requirements,
     // and the Rxq has the rx_burst() function: this allows the application to recieve packets.
     pub fn queue_setup(mut self) -> Result<Rxq, String> {
-        let mempool = self.mempool_handle.mempool_create().unwrap();
         let rx_conf: rte_eth_rxconf = unsafe { std::mem::zeroed() };
         let rc = unsafe {
             rte_eth_rx_queue_setup(
@@ -204,7 +203,7 @@ impl RxqHandle {
                 self.desc_num,
                 NumaSocketId::NumaSocketIdPort(self.port_id).to_socket_id() as _,
                 &rx_conf as *const _,
-                mempool.pool_ptr as *mut _
+                self.mempool.pool_ptr as *mut _
             )
         };
 
@@ -341,7 +340,7 @@ impl Port {
         Ok(())
     }
 
-    pub fn config_rxqs(&mut self, desc_num: u16, mempool_handle: MBuffMempoolHandle) -> Result<(), String> {
+    pub fn config_rxqs(&mut self, desc_num: u16, mempool: DpdkMempool) -> Result<(), String> {
 
         if self.rxqs.is_some() {
             return Err(format!("port-{}: Rx queues already set", self.port_id));
@@ -356,7 +355,7 @@ impl Port {
                     self.handle.clone(),
                     self.port_id, qid,
                     desc_num,
-                    mempool_handle.clone()
+                    mempool.clone()
                 ));
         }
         self.rxqs = Some(rxqs);

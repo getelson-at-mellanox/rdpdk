@@ -19,14 +19,17 @@ fn main() {
 
     let mut port = ports.remove(0);
 
-    let rx_mbuff_pool_handle =
+    let mut rx_mbuff_pool_handle =
         MBuffMempoolHandle::new("Rx echo pool", 1024)
             .data_root_size(RTE_MBUF_DEFAULT_BUF_SIZE as _)
             .socket(NumaSocketId::NumaSocketIdPort(port.id()).to_socket_id()).clone();
+    
+    let rxq_mempool = rx_mbuff_pool_handle.mempool_create()
+        .expect("Failed to create mempool");
 
     port.configure(1, 1).expect(&format!("port-{}: Failed to configure", port.id()));
 
-    port.config_rxqs(DEFAULT_RXQ_DESC_NUM, rx_mbuff_pool_handle)
+    port.config_rxqs(DEFAULT_RXQ_DESC_NUM, rxq_mempool)
         .expect(&format!("port-{}: Failed to set rxqs", port.id()));
 
     port.config_txqs(DEFAULT_TXQ_DESC_NUM)
