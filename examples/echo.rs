@@ -1,7 +1,22 @@
-use std::ptr::null_mut;
+use std::ptr::{null_mut};
 use rdpdk::lib::{MBuffMempoolHandle, NumaSocketId};
+use rdpdk::lib::dpdk_raw::rte_ethdev::{
+    rte_flow, rte_flow_action, 
+    rte_flow_action_queue, 
+    rte_flow_attr,
+    rte_flow_item,
+    rte_flow_create,
+    rte_flow_action_type_RTE_FLOW_ACTION_TYPE_END,
+    rte_flow_action_type_RTE_FLOW_ACTION_TYPE_QUEUE,
+    rte_flow_item_type_RTE_FLOW_ITEM_TYPE_END, 
+    rte_flow_item_type_RTE_FLOW_ITEM_TYPE_ETH, 
+    rte_flow_item_type_RTE_FLOW_ITEM_TYPE_IPV4, 
+    rte_flow_item_type_RTE_FLOW_ITEM_TYPE_TCP, 
+    rte_flow_item_type_RTE_FLOW_ITEM_TYPE_UDP
+};
 use rdpdk::lib::dpdk_raw::rte_mbuf::{rte_mbuf, RTE_MBUF_DEFAULT_BUF_SIZE};
 use rdpdk::lib::eal::Eal;
+use rdpdk::lib::port::{RxqHandle, TxqHandle};
 
 const DEFAULT_RXQ_DESC_NUM: u16 = 64;
 const DEFAULT_TXQ_DESC_NUM: u16 = 64;
@@ -20,7 +35,9 @@ fn main() {
     let rxq_mempool = rx_mbuff_pool_handle.mempool_create()
         .expect("Failed to create mempool");
 
-    port.configure(1, 1).expect(&format!("port-{}: Failed to configure", port.id()));
+    let queues_num:u16 = 2;
+    port.configure(queues_num, queues_num)
+        .expect(&format!("port-{}: Failed to configure", port.id()));
 
     port.config_rxqs(DEFAULT_RXQ_DESC_NUM, rxq_mempool)
         .expect(&format!("port-{}: Failed to set rxqs", port.id()));
@@ -28,28 +45,103 @@ fn main() {
     port.config_txqs(DEFAULT_TXQ_DESC_NUM)
         .expect(&format!("port-{}: Failed to set txqs", port.id()));
 
-    let (mut rxqs, mut txqs) = port.fetch_queues();
-
-    let rxq_a = rxqs.remove(0);
-    let txq_a = txqs.remove(0);
-
     let _ = port.start();
     
-    let io_thread = std::thread::spawn(move || {
-        let mut rxq = rxq_a.activate();
-        let mut txq = txq_a.activate();
+    add_flows().expect("Failed to add flows");
+    
+    let (mut rxqs, mut txqs) = port.fetch_queues();
 
-        println!("=== [IO]: echo server started");
-
-        let mbufs:[*mut rte_mbuf; 64] = [null_mut(); 64];
-        loop {
-            let rx_num = rxq.rx_burst(&mbufs);
-            if rx_num > 0 {
-                println!("=== [IO] echo server received {} packets", rx_num);
-                txq.tx_burst(&mbufs[..rx_num as usize]);
-            }
-        }
+    let rxh_q0 = rxqs.remove(0);
+    let txh_q0 = txqs.remove(0);
+    
+    let io_t0 = std::thread::spawn(move || {
+        do_io(0, rxh_q0, txh_q0);
     });
 
-    io_thread.join().expect("Failed to join io thread");
+    let rxh_q1 = rxqs.remove(0);
+    let txh_q1 = txqs.remove(0);
+
+    let io_t1 = std::thread::spawn(move || {
+        do_io(1, rxh_q1, txh_q1);
+    });
+    
+    io_t0.join().expect("Failed to join io thread 0");
+    io_t1.join().expect("Failed to join io thread 1");
+}
+
+fn do_io(qid: u16, rxqh: RxqHandle, txqh: TxqHandle,) {
+    let mut rxq = rxqh.activate();
+    let mut txq = txqh.activate();
+
+    println!("=== [IO {qid}]: echo server started");
+
+    let mbufs:[*mut rte_mbuf; 64] = [null_mut(); 64];
+    loop {
+        let rx_num = rxq.rx_burst(&mbufs);
+        if rx_num > 0 {
+            println!("=== [IO {qid}] echo server received {} packets", rx_num);
+            let tx_num = txq.tx_burst(&mbufs[..rx_num as usize]);
+            println!("=== [IO {qid}] echo server sent {} packets", tx_num);
+        }
+    }
+}
+
+fn add_flows() -> Result<(), String>{
+    
+    let mut attr: rte_flow_attr = { unsafe { std::mem::zeroed() } };
+    attr.set_ingress(1);
+    
+    let mut pattern_udp: [rte_flow_item;4] = { unsafe { std::mem::zeroed() } };
+    pattern_udp[0].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_ETH;
+    pattern_udp[1].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_IPV4;
+    pattern_udp[2].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_UDP;
+    pattern_udp[3].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_END;
+
+    let mut pattern_tcp: [rte_flow_item;4] = { unsafe { std::mem::zeroed() } };
+    pattern_tcp[0].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_ETH;
+    pattern_tcp[1].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_IPV4;
+    pattern_tcp[2].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_TCP;
+    pattern_tcp[3].type_ = rte_flow_item_type_RTE_FLOW_ITEM_TYPE_END;
+    
+    let queue_udp: rte_flow_action_queue = rte_flow_action_queue { index: 0 };
+    let queue_tcp: rte_flow_action_queue = rte_flow_action_queue { index: 1 };
+    
+    let mut actions_udp: [rte_flow_action;2] = { unsafe { std::mem::zeroed() } };
+    actions_udp[0].conf = &queue_udp as *const _ as *mut _;
+    actions_udp[0].type_ = rte_flow_action_type_RTE_FLOW_ACTION_TYPE_QUEUE;
+    actions_udp[1].type_ = rte_flow_action_type_RTE_FLOW_ACTION_TYPE_END;
+
+    let mut actions_tcp: [rte_flow_action;2] = { unsafe { std::mem::zeroed() } };
+    actions_tcp[0].conf = &queue_tcp as *const _ as *mut _;
+    actions_tcp[0].type_ = rte_flow_action_type_RTE_FLOW_ACTION_TYPE_QUEUE;
+    actions_tcp[1].type_ = rte_flow_action_type_RTE_FLOW_ACTION_TYPE_END;
+    
+    let udp_flow: *mut rte_flow = unsafe { 
+        rte_flow_create(
+            0u16,
+            &attr as *const _ as *mut _, 
+            &pattern_udp  as *const _ as *mut _, 
+            &actions_udp as *const _ as *mut _,
+            null_mut()
+        ) 
+    };
+    if udp_flow.is_null() {
+        return Err("Failed to create udp flow".to_string());
+    }
+
+    let tcp_flow: *mut rte_flow = unsafe {
+        rte_flow_create(
+            0u16,
+            &attr as *const _ as *mut _,
+            &pattern_tcp  as *const _ as *mut _,
+            &actions_tcp as *const _ as *mut _,
+            null_mut()
+        )
+    };
+    
+    if tcp_flow.is_null() {
+        return Err("Failed to create tcp flow".to_string());
+    }
+    
+    Ok(())
 }
