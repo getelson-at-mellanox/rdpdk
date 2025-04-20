@@ -1,6 +1,9 @@
+use std::ffi::c_void;
+use std::ptr::null_mut;
 use std::sync::Arc;
 use crate::lib::{MBuffMempoolHandle, NumaSocketId};
 use crate::lib::dpdk_raw::rte_ethdev::{
+    rte_eth_rss_conf,
     rte_eth_conf,
     rte_eth_hash_function,
     rte_eth_rxconf,
@@ -9,7 +12,15 @@ use crate::lib::dpdk_raw::rte_ethdev::{
     rte_eth_rx_queue_setup,
     rte_eth_tx_queue_setup,
     rte_eth_hash_function_RTE_ETH_HASH_FUNCTION_DEFAULT,
+    rust_get_port_fp_ops,
+    rte_eth_dev_start,
+    RTE_ETH_RSS_IP,
+    rte_eth_dev_info,
+    rte_eth_dev_info_get,
+    eth_rx_burst_t,
+    eth_tx_burst_t,
 };
+use crate::lib::dpdk_raw::rte_mbuf::rte_mbuf;
 
 #[derive(Debug, Clone)]
 #[allow(unused)]
@@ -40,6 +51,12 @@ impl std::fmt::Debug for rte_eth_txconf {
     }
 }
 
+impl std::fmt::Debug for rte_eth_dev_info {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "dev_info: {{ todo }}")
+    }
+}
+
 impl PortHandle {
     fn new() -> Self {
         PortHandle {
@@ -65,15 +82,15 @@ impl PortHandle {
 
 #[derive(Debug)]
 pub struct TxqHandle {
-    handle: PortHandle,
+    _handle: PortHandle,
     port_id: u16,
     queue_id: u16,
     desc_num: u16,
 }
 
 impl TxqHandle {
-    pub fn activate(mut self) -> Result<Txq, String> {
-        let mut tx_conf: rte_eth_txconf = unsafe { std::mem::zeroed() };
+    pub fn queue_setup(self) -> Result<Txq, String> {
+        let tx_conf: rte_eth_txconf = unsafe { std::mem::zeroed() };
 
         let rc = unsafe {
             rte_eth_tx_queue_setup(
@@ -90,7 +107,8 @@ impl TxqHandle {
 
         Ok(Txq {
             handle: self,
-            tx_conf:tx_conf,
+            _tx_conf:tx_conf,
+            tx_burst: None,
             _phantom: std::marker::PhantomData,
         })
     }
@@ -99,7 +117,7 @@ impl TxqHandle {
 // Handle allows moving between threads, its not polling!
 #[derive(Debug)]
 pub struct RxqHandle {
-    handle: PortHandle,
+    _handle: PortHandle,
     port_id: u16,
     queue_id: u16,
     desc_num: u16,
@@ -114,7 +132,7 @@ impl RxqHandle {
         desc_num: u16,
         mempool_handle: MBuffMempoolHandle) -> Self {
         RxqHandle {
-            handle: handle,
+            _handle: handle,
             port_id: port_id,
             queue_id: queue_id,
             desc_num: desc_num,
@@ -129,11 +147,9 @@ impl RxqHandle {
 
     // It returns an Rxq instance, which has the PhantomData to encode the threading requirements,
     // and the Rxq has the rx_burst() function: this allows the application to recieve packets.
-    pub fn activate(mut self) -> Result<Rxq, String> {
+    pub fn queue_setup(mut self) -> Result<Rxq, String> {
         let mempool = self.mempool_handle.mempool_create().unwrap();
-
-        let mut rx_conf: rte_eth_rxconf = unsafe { std::mem::zeroed() };
-
+        let rx_conf: rte_eth_rxconf = unsafe { std::mem::zeroed() };
         let rc = unsafe {
             rte_eth_rx_queue_setup(
                 self.port_id,
@@ -144,13 +160,15 @@ impl RxqHandle {
                 mempool.pool_ptr as *mut _
             )
         };
+
         if rc < 0 {
             return Err(format!("port-{}: rte_eth_rx_queue_setup failed: {}", self.port_id, rc));
         }
 
         Ok(Rxq {
             handle: self,
-            rx_conf:rx_conf,
+            _rx_conf:rx_conf,
+            rx_burst: None,
             _phantom: std::marker::PhantomData,
         })
     }
@@ -159,38 +177,57 @@ impl RxqHandle {
 #[derive(Debug)]
 pub struct Rxq {
     handle: RxqHandle,
-    rx_conf: rte_eth_rxconf,
-    // This "PhantomData" tells the rust compiler to Pretend the Rc<()> is in this struct
-    // but in practice it is a Zero-Sized-Type, so takes up no space. It is a compile-time
-    // language technique to ensure the struct is not moved between threads. This encodes
-    // the API requirement "don't poll from multiple threads without synchronisation (e.g. Mutex)"
+    _rx_conf: rte_eth_rxconf,
+    rx_burst:Option<(eth_rx_burst_t, *mut c_void)>,
     _phantom: std::marker::PhantomData<std::rc::Rc<()>>,
 }
 
 impl Rxq {
-    // TODO: datapath Error types should be lightweight, not String. Here we return ().
-    pub fn rx_burst(&mut self, _mbufs: &mut [u8]) -> Result<usize, ()> {
-        // TODO: Design the Mbuf struct wrapper, and how to best return a batch
-        //  e.g.: investigate "ArrayVec" crate for safe & fixed sized, stack allocated arrays
-        //
-        // There is work to do here, but I want to communicate the general DPDK/EAL/Eth/Rxq concepts
-        // now, this part is not done yet: it is likely the hardest/most performance critical.
-        //
-        // call rte_eth_rx_burst() here
-        println!(
-            "[thread: {:?}] rx_burst: port {} queue {}",
-            std::thread::current().id(),
-            self.handle.port_id,
-            self.handle.queue_id
-        );
-        Ok(0)
+
+    // Called after port start.
+    // Requires 0001-rust-export-missing-port-objects.patch.
+    pub fn enable_rx(&mut self) {
+        self.rx_burst = unsafe {
+            let ops = &mut *rust_get_port_fp_ops(self.handle.port_id);
+            let rxqd:*mut c_void = *ops.rxq.data.wrapping_add(self.handle.queue_id as usize);
+            Some((ops.rx_pkt_burst, rxqd))
+        }
+    }
+
+    pub fn rx_burst(&mut self, mbufs: &[*mut rte_mbuf]) -> u16 {
+
+        let num = unsafe {
+            let (burst_fn, qdesc) = self.rx_burst.unwrap();
+            burst_fn.unwrap()(qdesc, mbufs.as_ptr() as _, mbufs.len() as u16)
+        };
+        num
     }
 }
 
 pub struct Txq {
     handle: TxqHandle,
-    tx_conf: rte_eth_txconf,
+    _tx_conf: rte_eth_txconf,
+    tx_burst: Option<(eth_tx_burst_t, *mut c_void)>,
     _phantom: std::marker::PhantomData<std::rc::Rc<()>>,
+}
+
+impl Txq {
+    // Requires 0001-rust-export-missing-port-objects.patch
+    pub fn enable_tx(&mut self) {
+        self.tx_burst = unsafe {
+            let ops = &mut *rust_get_port_fp_ops(self.handle.port_id);
+            let txqd:*mut c_void = *ops.txq.data.wrapping_add(self.handle.queue_id as usize);
+            Some((ops.tx_pkt_burst, txqd))
+        }
+    }
+
+    pub fn tx_burst(&mut self, mbufs: &[*mut rte_mbuf]) -> u16 {
+        let num = unsafe {
+            let (burst_fn, qdesc) = self.tx_burst.unwrap();
+            burst_fn.unwrap()(qdesc, mbufs.as_ptr() as _, mbufs.len() as u16)
+        };
+        num
+    }
 }
 
 #[derive(Debug)]
@@ -201,6 +238,7 @@ pub struct Port {
     rxqs: Option<Vec<RxqHandle>>,
     txqs: Option<Vec<TxqHandle>>,
 
+    dev_info: rte_eth_dev_info,
     dev_conf: rte_eth_conf,
 }
 
@@ -211,11 +249,18 @@ impl Port {
     }
 
     pub fn from_port_id(port_id: PortId) -> Self {
+        let mut dev_info: rte_eth_dev_info = unsafe { std::mem::zeroed() };
+        let _ = unsafe {
+            rte_eth_dev_info_get(port_id, &mut dev_info as *mut rte_eth_dev_info)
+        };
+
         Port {
             handle: PortHandle::new(),
             port_id:port_id,
             rxqs: None,
             txqs: None,
+
+            dev_info: dev_info,
             dev_conf: unsafe { std::mem::zeroed() },
         }
     }
@@ -229,6 +274,15 @@ impl Port {
 
         self.handle.rxq_num = Some(rxq_num);
         self.handle.txq_num = Some(txq_num);
+
+        self.dev_conf.rx_adv_conf.rss_conf = rte_eth_rss_conf {
+            rss_key: null_mut(),
+            rss_key_len: 0,
+            rss_hf: if rxq_num > 1 {
+                RTE_ETH_RSS_IP as u64 & self.dev_info.flow_type_rss_offloads
+            } else { 0 },
+            algorithm: 0 as rte_eth_hash_function,
+        };
 
         let rc = unsafe {
             rte_eth_dev_configure(self.port_id, rxq_num, txq_num, &mut self.dev_conf)
@@ -259,7 +313,6 @@ impl Port {
                 ));
         }
         self.rxqs = Some(rxqs);
-        println!("{:?}", self.handle);
         Ok(())
     }
 
@@ -273,7 +326,7 @@ impl Port {
 
         for qid in 0..q_num {
             txqs.push(TxqHandle {
-                handle: self.handle.clone(),
+                _handle: self.handle.clone(),
                 port_id: self.port_id,
                 queue_id: qid,
                 desc_num: desc_num,
@@ -297,11 +350,16 @@ impl Port {
         Ok(())
     }
 
-    pub fn start(&mut self) -> (Vec<RxqHandle>, Vec<TxqHandle>) {
+    pub fn fetch_queues(&mut self) -> (Vec<RxqHandle>, Vec<TxqHandle>) {
         // call rte_eth_dev_start() here, then give ownership of Rxq/Txq to app
         (
             std::mem::take(&mut self.rxqs.as_mut().unwrap()),
             std::mem::take(&mut self.txqs.as_mut().unwrap())
         )
+    }
+
+    pub fn start(&mut self) -> Result<(), String> {
+        unsafe {rte_eth_dev_start(self.port_id)};
+        Ok(())
     }
 }

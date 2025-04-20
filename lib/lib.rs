@@ -41,7 +41,7 @@ impl MBuffMempoolHandle {
     }
     
     pub fn mempool_create(&mut self) -> Result<ThreadBoundMempool, String>{
-        let mut pool_ptr = unsafe {
+        let pool_ptr = unsafe {
             rte_pktmbuf_pool_create(
                 CString::new(self.name.as_str()).unwrap().as_ptr(),
                 self.capacity,
@@ -52,10 +52,10 @@ impl MBuffMempoolHandle {
             )};
 
         if pool_ptr != std::ptr::null_mut() {
-            Ok((ThreadBoundMempool {
+            Ok(ThreadBoundMempool {
                 pool_ptr: pool_ptr as _,
                 _guard: std::marker::PhantomData
-            }))
+            })
         } else {
             Err(String::from("Failed to create mempool"))
         }
@@ -63,19 +63,19 @@ impl MBuffMempoolHandle {
     
     pub fn cache_size(&mut self, cs:u32) -> &mut Self {
         self.cache_size = cs;
-        return self;
+        self
     }
     pub fn priv_size(&mut self, ps:u16) -> &mut Self {
         self.priv_size = ps;
-        return self;
+        self
     }
     pub fn data_root_size(&mut self, drs:u16) -> &mut Self {
         self.data_root_size = drs;
-        return self;
+        self
     }
     pub fn socket(&mut self, s: i32) -> &mut Self {
         self.socket = s;
-        return self;
+        self
     }
 }
 

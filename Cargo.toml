@@ -20,4 +20,7 @@ members = [
 name = "echo"
 crate-type = ["bin"]
 
+[[bin]]
+name = "echo"
+path = "examples/echo.rs"
 
