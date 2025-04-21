@@ -1,4 +1,5 @@
 use std::ptr::{null_mut};
+use std::sync::mpsc;
 use std::thread::JoinHandle;
 use rdpdk::lib::{MBuffMempoolHandle, NumaSocketId};
 use rdpdk::lib::dpdk_raw::rte_ethdev::{
@@ -18,9 +19,24 @@ use rdpdk::lib::dpdk_raw::rte_ethdev::{
 use rdpdk::lib::dpdk_raw::rte_mbuf::{rte_mbuf, RTE_MBUF_DEFAULT_BUF_SIZE};
 use rdpdk::lib::eal::Eal;
 use rdpdk::lib::port::{RxqHandle, TxqHandle};
+use std::thread;
+use std::time::Duration;
+use tokio::sync::broadcast;
+
 
 const DEFAULT_RXQ_DESC_NUM: u16 = 64;
 const DEFAULT_TXQ_DESC_NUM: u16 = 64;
+
+#[derive(Debug, Clone)]
+enum CtrlMsg {
+    Stop,
+}
+
+#[derive(Debug)]
+enum StatusMsg {
+    Ready(u16),
+    RxCnt((u16, u16))
+}
 
 fn main() {
     let mut eal = Eal::init().expect("Failed to init EAL");
@@ -51,35 +67,83 @@ fn main() {
     add_flows().expect("Failed to add flows");
     
     let (mut rxqs, mut txqs) = port.fetch_queues();
+
+    let (status_tx, status_rx) = mpsc::channel::<StatusMsg>();
+    let (control_tx, _) = broadcast::channel::<CtrlMsg>(queues_num as usize);
     
     let mut iotv: Vec<JoinHandle<()>> = Vec::new();
     for i in 0..queues_num {
         let rxqh = rxqs.remove(0);
         let txqh = txqs.remove(0);
+        let status_tx = status_tx.clone();
+        let control_tx = control_tx.clone();
         let iot = std::thread::spawn(move || {
-            do_io(i, rxqh, txqh);
+            do_io(i, rxqh, txqh, status_tx, control_tx);
         });
         iotv.push(iot);
     }
 
+    let mut total_rx_cnt: u16 = 0;
+    loop {
+        match status_rx.try_recv() {
+            Ok(status) => match status {
+                StatusMsg::Ready(id) => {
+                    println!("queue-{}: is ready for IO", id);
+                },
+                StatusMsg::RxCnt((id, rx_cnt)) => {
+                    println!("queue-{id}: received {rx_cnt} total {total_rx_cnt}");
+                    total_rx_cnt += rx_cnt;
+                    if total_rx_cnt > 10 {
+                        println!("stop IO");
+                        control_tx.send(CtrlMsg::Stop).unwrap();
+                        break;
+                    }
+                }
+            },
+            Err(mpsc::TryRecvError::Empty) => {
+                thread::sleep(Duration::from_millis(100));
+                continue;
+            }
+            Err(mpsc::TryRecvError::Disconnected) => {
+                println!("queue disconnected");
+                break
+            }
+        }
+    }
+    
     for iot in iotv {
         iot.join().expect("Failed to join io thread");
     }
 }
 
-fn do_io(qid: u16, rxqh: RxqHandle, txqh: TxqHandle,) {
+fn do_io(
+    qid: u16, 
+    rxqh: RxqHandle, 
+    txqh: TxqHandle, 
+    status_tx: mpsc::Sender<StatusMsg>, 
+    control_tx: broadcast::Sender<CtrlMsg>) {
     let mut rxq = rxqh.activate();
     let mut txq = txqh.activate();
-
-    println!("=== [IO {qid}]: echo server started");
-
+    
+    let mut control_rx = control_tx.subscribe();
+    status_tx.send(StatusMsg::Ready(qid)).unwrap();
+    
     let mbufs:[*mut rte_mbuf; 64] = [null_mut(); 64];
     loop {
+        
+        match control_rx.try_recv() {
+            Ok(CtrlMsg::Stop) => {
+                println!("queue-{qid}: got stop command");
+                return
+            },
+            Err(broadcast::error::TryRecvError::Empty) => {},
+            Err(_) => return,
+        }
+        
         let rx_num = rxq.rx_burst(&mbufs);
         if rx_num > 0 {
-            println!("=== [IO {qid}] echo server received {} packets", rx_num);
-            let tx_num = txq.tx_burst(&mbufs[..rx_num as usize]);
-            println!("=== [IO {qid}] echo server sent {} packets", tx_num);
+            status_tx.send(StatusMsg::RxCnt((qid, rx_num))).unwrap();
+            txq.tx_burst(&mbufs[..rx_num as usize]);
         }
     }
 }

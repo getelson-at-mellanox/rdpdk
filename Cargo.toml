@@ -15,6 +15,7 @@ members = [
 ]
 
 [dependencies]
+tokio = { version = "1.44.2", features = ["sync"] }
 
 [[example]]
 name = "echo"
