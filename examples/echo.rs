@@ -111,8 +111,17 @@ fn main() {
         }
     }
     
-    for iot in iotv {
-        iot.join().expect("Failed to join io thread");
+    loop {
+        match port.stop() {
+            Ok(_) => {
+                println!("port-{} stopped", port.id());
+                break
+            },
+            Err(q_cnt) => {
+                println!("port={} cannot stop yet: {}", port.id(), q_cnt);
+                thread::sleep(Duration::from_millis(100));
+            }
+        }
     }
 }
 

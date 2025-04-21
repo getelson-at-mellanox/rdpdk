@@ -2,24 +2,7 @@ use std::ffi::c_void;
 use std::ptr::null_mut;
 use std::sync::Arc;
 use crate::lib::{DpdkMempool, NumaSocketId};
-use crate::lib::dpdk_raw::rte_ethdev::{
-    rte_eth_rss_conf,
-    rte_eth_conf,
-    rte_eth_hash_function,
-    rte_eth_rxconf,
-    rte_eth_txconf,
-    rte_eth_dev_configure,
-    rte_eth_rx_queue_setup,
-    rte_eth_tx_queue_setup,
-    rte_eth_hash_function_RTE_ETH_HASH_FUNCTION_DEFAULT,
-    rust_get_port_fp_ops,
-    rte_eth_dev_start,
-    RTE_ETH_RSS_IP,
-    rte_eth_dev_info,
-    rte_eth_dev_info_get,
-    eth_rx_burst_t,
-    eth_tx_burst_t,
-};
+use crate::lib::dpdk_raw::rte_ethdev::{rte_eth_rss_conf, rte_eth_conf, rte_eth_hash_function, rte_eth_rxconf, rte_eth_txconf, rte_eth_dev_configure, rte_eth_rx_queue_setup, rte_eth_tx_queue_setup, rte_eth_hash_function_RTE_ETH_HASH_FUNCTION_DEFAULT, rust_get_port_fp_ops, rte_eth_dev_start, RTE_ETH_RSS_IP, rte_eth_dev_info, rte_eth_dev_info_get, eth_rx_burst_t, eth_tx_burst_t, rte_eth_dev_stop};
 use crate::lib::dpdk_raw::rte_mbuf::rte_mbuf;
 
 #[derive(Clone)]
@@ -114,15 +97,6 @@ impl PortHandle {
             _rx_conf: DpdkEthRxConf::new(),
             _tx_conf: DpdkEthTxConf::new(),
             refcnt: Arc::new(())
-        }
-    }
-
-    fn stop(&mut self) -> Result<(), usize> {
-        let sc = Arc::<()>::strong_count(&self.refcnt);
-        if  sc == 1 {
-            Ok(())
-        } else {
-            Err(sc)
         }
     }
 }
@@ -422,4 +396,14 @@ impl Port {
         unsafe {rte_eth_dev_start(self.port_id)};
         Ok(())
     }
+
+    pub fn stop(&mut self) -> Result<(), usize> {
+        let sc = Arc::<()>::strong_count(&self.handle.refcnt);
+        if sc > 1 {
+            return Err(sc);
+        }
+        
+        unsafe {rte_eth_dev_stop(self.port_id)};
+        Ok(())
+    }    
 }
