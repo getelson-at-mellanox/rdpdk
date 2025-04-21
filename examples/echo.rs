@@ -1,4 +1,5 @@
 use std::ptr::{null_mut};
+use std::thread::JoinHandle;
 use rdpdk::lib::{MBuffMempoolHandle, NumaSocketId};
 use rdpdk::lib::dpdk_raw::rte_ethdev::{
     rte_flow, rte_flow_action, 
@@ -50,23 +51,20 @@ fn main() {
     add_flows().expect("Failed to add flows");
     
     let (mut rxqs, mut txqs) = port.fetch_queues();
-
-    let rxh_q0 = rxqs.remove(0);
-    let txh_q0 = txqs.remove(0);
     
-    let io_t0 = std::thread::spawn(move || {
-        do_io(0, rxh_q0, txh_q0);
-    });
+    let mut iotv: Vec<JoinHandle<()>> = Vec::new();
+    for i in 0..queues_num {
+        let rxqh = rxqs.remove(0);
+        let txqh = txqs.remove(0);
+        let iot = std::thread::spawn(move || {
+            do_io(i, rxqh, txqh);
+        });
+        iotv.push(iot);
+    }
 
-    let rxh_q1 = rxqs.remove(0);
-    let txh_q1 = txqs.remove(0);
-
-    let io_t1 = std::thread::spawn(move || {
-        do_io(1, rxh_q1, txh_q1);
-    });
-    
-    io_t0.join().expect("Failed to join io thread 0");
-    io_t1.join().expect("Failed to join io thread 1");
+    for iot in iotv {
+        iot.join().expect("Failed to join io thread");
+    }
 }
 
 fn do_io(qid: u16, rxqh: RxqHandle, txqh: TxqHandle,) {
