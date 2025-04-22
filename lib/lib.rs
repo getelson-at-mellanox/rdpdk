@@ -42,7 +42,7 @@ impl MBuffMempoolHandle {
         }
     }
     
-    pub fn mempool_create(&mut self) -> Result<DpdkMempool, String>{
+    pub fn mempool_create(self) -> Result<DpdkMempool, String>{
         let pool_ptr = unsafe {
             rte_pktmbuf_pool_create(
                 CString::new(self.name.as_str()).unwrap().as_ptr(),
@@ -62,21 +62,17 @@ impl MBuffMempoolHandle {
         }
     }
     
-    pub fn cache_size(&mut self, cs:u32) -> &mut Self {
+    pub fn cache_size(&mut self, cs:u32) {
         self.cache_size = cs;
-        self
     }
-    pub fn priv_size(&mut self, ps:u16) -> &mut Self {
+    pub fn priv_size(&mut self, ps:u16){
         self.priv_size = ps;
-        self
     }
-    pub fn data_root_size(&mut self, drs:u16) -> &mut Self {
+    pub fn data_root_size(&mut self, drs:u16) {
         self.data_root_size = drs;
-        self
     }
-    pub fn socket(&mut self, s: i32) -> &mut Self {
+    pub fn socket(&mut self, s: i32) {
         self.socket = s;
-        self
     }
 }
 

@@ -44,11 +44,10 @@ fn main() {
 
     let mut port = ports.remove(0);
 
-    let mut rx_mbuff_pool_handle =
-        MBuffMempoolHandle::new("Rx echo pool", 1024)
-            .data_root_size(RTE_MBUF_DEFAULT_BUF_SIZE as _)
-            .socket(NumaSocketId::NumaSocketIdPort(port.id()).to_socket_id()).clone();
-    
+    let socket_id = NumaSocketId::NumaSocketIdPort(port.id()).to_socket_id();
+    let mut rx_mbuff_pool_handle = MBuffMempoolHandle::new("Rx echo pool", 1024);
+    rx_mbuff_pool_handle.data_root_size(RTE_MBUF_DEFAULT_BUF_SIZE as _);
+    rx_mbuff_pool_handle.socket(socket_id);
     let rxq_mempool = rx_mbuff_pool_handle.mempool_create()
         .expect("Failed to create mempool");
 
