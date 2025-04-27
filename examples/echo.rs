@@ -38,6 +38,14 @@ enum StatusMsg {
     RxCnt((u16, u16))
 }
 
+macro_rules! spawn_io_thread {
+    ($targ:expr) => {
+        std::thread::spawn(move || {
+            do_io($targ)
+        })
+    };
+}
+
 fn main() {
     let mut eal = Eal::init().expect("Failed to init EAL");
     let mut ports = eal.take_eth_ports().expect("Failed to take ports");
@@ -76,9 +84,8 @@ fn main() {
         let txqh = txqs.remove(0);
         let status_tx = status_tx.clone();
         let control_tx = control_tx.clone();
-        let iot = std::thread::spawn(move || {
-            do_io(i, rxqh, txqh, status_tx, control_tx);
-        });
+        let iot_param: IoTParam = IoTParam(i, rxqh, txqh, status_tx, control_tx);
+        let iot = spawn_io_thread!(iot_param);
         iotv.push(iot);
     }
 
@@ -124,12 +131,19 @@ fn main() {
     }
 }
 
-fn do_io(
-    qid: u16, 
-    rxqh: RxqHandle, 
-    txqh: TxqHandle, 
-    status_tx: mpsc::Sender<StatusMsg>, 
-    control_tx: broadcast::Sender<CtrlMsg>) {
+#[derive(Debug)]
+struct IoTParam(
+    u16,
+    RxqHandle,
+    TxqHandle,
+    mpsc::Sender<StatusMsg>,
+    broadcast::Sender<CtrlMsg>
+);
+
+fn do_io(iotp: IoTParam) {
+    
+    let IoTParam(qid, rxqh, txqh, status_tx, control_tx) = iotp;
+    
     let mut rxq = rxqh.activate();
     let mut txq = txqh.activate();
     
