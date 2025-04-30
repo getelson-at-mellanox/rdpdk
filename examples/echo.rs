@@ -46,8 +46,9 @@ macro_rules! spawn_io_thread {
     };
 }
 
-fn main() {
-    let mut eal = Eal::init().expect("Failed to init EAL");
+#[tokio::main]
+async fn main() {
+    let mut eal = Eal::init().await.expect("Failed to init EAL");
     let mut ports = eal.take_eth_ports().expect("Failed to take ports");
 
     let mut port = ports.remove(0);
